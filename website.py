@@ -47,7 +47,8 @@ app.config['STUDENT_HUB_UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 
 ALLOWED_STUDENT_HUB_EXTENSIONS = {"pdf", "pptx", "docx", "png", "jpg", "jpeg"}
 
 os.makedirs(app.config['STUDENT_HUB_UPLOAD_FOLDER'], exist_ok=True)
-
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_TYPE'] = 'filesystem'
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 migrate = Migrate(app, db)  # ✅ NEW
@@ -583,7 +584,7 @@ def _serialize_exam(exam: 'Exam') -> dict:
         "required_to_complete_course": exam.required_to_complete_course,
         "settings": exam.settings or {},
         "max_score": _exam_max_score(exam),
-        "questions": [
+        "questions": [  
             _serialize_exam_question(question)
             for question in sorted(exam.questions, key=lambda q: (q.order_index or 0, q.id or 0))
         ]
