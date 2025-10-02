@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Manage Exams{% endblock %}
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<div class="admin-exams-shell">
+  <header class="admin-exams-header">
+    <div>
+      <h1>🧪 Exam Management</h1>
+      <p>Create, edit, and review exams linked to courses.</p>
+    </div>
+    <a class="btn primary" href="{{ url_for('admin_exam_new') }}">➕ New Exam</a>
+  </header>
+
+  <section class="exam-list">
+    {% if exams_payload %}
+      {% for row in exams_payload %}
+        {% set exam = row.exam %}
+        <article class="exam-card {% if not exam.is_active %}is-inactive{% endif %}">
+          <header>
+            <div>
+              <h2>{{ exam.title }}</h2>
+              {% if exam.description %}
+                <p class="muted">{{ exam.description }}</p>
+              {% endif %}
+            </div>
+            <div class="exam-actions">
+              <a class="btn ghost" href="{{ url_for('admin_exam_edit', exam_id=exam.id) }}">✏️ Edit</a>
+              <a class="btn ghost" href="{{ url_for('admin_exam_results', exam_id=exam.id) }}">📊 Results</a>
+              <a class="btn ghost" href="{{ url_for('exam_page', course_id=exam.course_id or 0, exam_id=exam.id) }}" target="_blank">👁 Preview</a>
+            </div>
+          </header>
+          <div class="exam-meta">
+            <span>Course: {{ row.course.name|capitalize if row.course else 'Standalone' }}{% if row.course %} (Year {{ row.course.year }}){% endif %}</span>
+            <span>Questions: {{ row.question_count }}</span>
+            <span>Duration: {{ exam.duration_minutes }} min</span>
+            <span>Pass Mark: {{ '%0.0f'|format(exam.pass_mark) }}%</span>
+            <span>Status: {{ 'Active' if exam.is_active else 'Inactive' }}</span>
+            <span>Attempts: {{ row.attempts }}</span>
+            <span>Average Score: {{ row.average_score if row.average_score is not none else '—' }}</span>
+            <span>Pass Rate: {{ row.pass_rate if row.pass_rate is not none else '—' }}%</span>
+          </div>
+          <footer>
+            {% if exam.is_required %}<span class="chip required">Required</span>{% else %}<span class="chip optional">Optional</span>{% endif %}
+            {% if exam.allow_retakes %}<span class="chip">Retakes Allowed</span>{% else %}<span class="chip">Single Attempt</span>{% endif %}
+            {% if exam.required_to_complete_course %}<span class="chip">Needed for completion</span>{% endif %}
+          </footer>
+        </article>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <p>No exams created yet.</p>
+        <a class="btn primary" href="{{ url_for('admin_exam_new') }}">Create your first exam</a>
+      </div>
+    {% endif %}
+  </section>
+</div>
+
+<style>
+.admin-exams-shell {
+  max-width: 1100px;
+  margin: 40px auto;
+  padding: 24px;
+  background: rgba(12, 18, 36, 0.95);
+  border-radius: 20px;
+  box-shadow: 0 24px 40px rgba(0,0,0,0.45);
+  display: grid;
+  gap: 24px;
+}
+.admin-exams-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.admin-exams-header h1 {
+  margin: 0 0 8px;
+}
+.btn.primary {
+  background: linear-gradient(135deg, #ffd27f, #f6a25a);
+  color: #11162b;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn.ghost {
+  background: rgba(255,255,255,0.12);
+  color: #f5f7ff;
+  padding: 8px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+}
+.btn.ghost:hover {
+  background: rgba(255,255,255,0.2);
+}
+.exam-list {
+  display: grid;
+  gap: 18px;
+}
+.exam-card {
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 20px;
+  background: rgba(8, 14, 32, 0.92);
+  display: grid;
+  gap: 16px;
+}
+.exam-card.is-inactive {
+  opacity: 0.75;
+}
+.exam-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.exam-card header h2 {
+  margin: 0 0 6px;
+}
+.exam-card .muted {
+  color: #a8b4e6;
+  margin: 0;
+}
+.exam-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.exam-meta {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  font-size: 0.9rem;
+  color: #d9e2ff;
+}
+.exam-card footer {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.1);
+  font-size: 0.85rem;
+}
+.chip.required { background: rgba(255, 195, 125, 0.24); color: #ffdbaa; }
+.chip.optional { background: rgba(112, 220, 148, 0.2); color: #b8ffd9; }
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  border: 1px dashed rgba(255,255,255,0.15);
+  border-radius: 16px;
+}
+@media (max-width: 760px) {
+  .admin-exams-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .exam-card header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .exam-actions {
+    flex-wrap: wrap;
+  }
+}
+</style>
+{% endblock %}

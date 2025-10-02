@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+{% block title %}Quiz Revision – {{ course.name|capitalize }}{% endblock %}
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<div class="course-revision">
+  <header class="revision-header">
+    <h2>📝 Retake Quiz / Revise – {{ course.name|capitalize }} (Year {{ course.year }})</h2>
+    <p>Select a lesson to practise its quiz, or revise the entire course in one go.</p>
+    <a class="btn" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">⬅ Back to Course</a>
+  </header>
+
+  <section class="course-wide">
+    <h3>🎯 Revise the Entire Course</h3>
+    <p class="note">Runs every quiz from this course. Progress auto-saves so you can resume later.</p>
+    <div class="course-wide-actions">
+      <a class="btn" href="{{ url_for('course_quiz_retake', course_id=course.id, scope='course', mode='list') }}">List View</a>
+      <a class="btn ghost" href="{{ url_for('course_quiz_retake', course_id=course.id, scope='course', mode='random') }}">Randomized</a>
+    </div>
+  </section>
+
+  <section class="lesson-selector">
+    <h3>🎯 Pick a Lesson</h3>
+    <div class="lesson-grid">
+      {% for lesson in lessons %}
+        <div class="lesson-card {% if selected_lesson and selected_lesson.id == lesson.id and scope == 'lesson' %}is-active{% endif %}">
+          <h4>Week {{ lesson.week }}</h4>
+          <p>{{ lesson.title }}</p>
+          <div class="lesson-actions">
+            <a class="btn" href="{{ url_for('course_quiz_retake', course_id=course.id, scope='lesson', lesson_id=lesson.id, mode='list') }}">List View</a>
+            <a class="btn ghost" href="{{ url_for('course_quiz_retake', course_id=course.id, scope='lesson', lesson_id=lesson.id, mode='random') }}">Randomized</a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if resume_prompt_attempt %}
+    {% set resume_mode = 'random' if resume_prompt_attempt.attempt_type.endswith('random') else 'list' %}
+    <div class="resume-banner">
+      <p>You have an unfinished revision attempt from {{ resume_prompt_attempt.created_at.strftime('%d %b %Y, %H:%M') if resume_prompt_attempt.created_at else 'earlier' }}.</p>
+      <div class="resume-actions">
+        <a class="btn" href="{{ url_for('course_quiz_retake', course_id=course.id, scope='course', resume_attempt=resume_prompt_attempt.id, mode=resume_mode) }}">Resume</a>
+        <a class="btn ghost" href="{{ url_for('course_quiz_retake', course_id=course.id, discard_attempt=resume_prompt_attempt.id) }}">Start Again</a>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if scope == 'lesson' and selected_lesson %}
+    <section class="revision-session">
+      <header>
+        <h3>📘 {{ selected_lesson.title }} — {% if view_mode == 'random' %}Randomized{% else %}List{% endif %} View</h3>
+        <p class="note">Answer the questions below and submit to check your understanding. Wrong answers will highlight the correct choice.</p>
+      </header>
+
+      {% if result_payload %}
+        {% include 'quiz_retake_results.html' %}
+      {% else %}
+        <form action="{{ url_for('course_quiz_retake', course_id=course.id) }}" method="POST" class="revision-form">
+          <input type="hidden" name="scope" value="lesson">
+          <input type="hidden" name="lesson_id" value="{{ selected_lesson.id }}">
+          <input type="hidden" name="mode" value="{{ view_mode }}">
+          <input type="hidden" name="question_ids" value="{{ question_ids }}">
+
+          {% for quiz in quiz_items %}
+            <div class="quiz-card" style="text-align:left;">
+              <p class="question">{{ loop.index }}. {{ quiz.question }}</p>
+              {% for letter, option in quiz.options.items() %}
+                <label class="option">
+                  <input type="radio" name="quiz_{{ quiz.id }}" value="{{ letter }}" required>
+                  <span class="badge">{{ letter }}</span>
+                  <span>{{ option }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          {% endfor %}
+
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Submit Revision</button>
+          </div>
+        </form>
+      {% endif %}
+    </section>
+  {% elif scope == 'course' and quiz_items %}
+    <section class="revision-session">
+      <header>
+        <h3>🧭 Course-wide Revision — {% if view_mode == 'random' %}Randomized{% else %}List{% endif %} View</h3>
+        <p class="note">Progress auto-saves after each answer. You can leave and resume any time.</p>
+      </header>
+
+      {% if result_payload and result_payload.scope == 'course' %}
+        {% include 'quiz_retake_results.html' %}
+      {% else %}
+        <form action="{{ url_for('course_quiz_retake', course_id=course.id) }}" method="POST" class="revision-form" id="courseRevisionForm">
+          <input type="hidden" name="scope" value="course">
+          <input type="hidden" name="mode" value="{{ view_mode }}">
+          <input type="hidden" name="attempt_id" value="{{ autosave_attempt.id if autosave_attempt else '' }}">
+          <input type="hidden" name="question_ids" value="{{ question_ids }}">
+
+          {% for quiz in quiz_items %}
+            <div class="quiz-card" style="text-align:left;">
+              <p class="question">{{ loop.index }}. {{ quiz.question }}
+                {% if quiz.lesson %}<span class="lesson-chip">Week {{ quiz.lesson.week }} · {{ quiz.lesson.title }}</span>{% endif %}
+              </p>
+              {% for letter, option in quiz.options.items() %}
+                {% set key = 'quiz_' ~ quiz.id %}
+                <label class="option">
+                  <input type="radio" name="quiz_{{ quiz.id }}" value="{{ letter }}" {% if existing_answers.get(quiz.id) == letter %}checked{% endif %}>
+                  <span class="badge">{{ letter }}</span>
+                  <span>{{ option }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          {% endfor %}
+
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Finish Revision</button>
+          </div>
+        </form>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <section class="history-section">
+    <h3>📈 Revision History</h3>
+    {% if history_rows %}
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Attempt</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Score</th>
+            <th>Date</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in history_rows %}
+            {% set attempt = row.attempt %}
+            {% set lesson = row.lesson %}
+            <tr>
+              <td>#{{ attempt.attempt_number }}</td>
+              <td>
+                {% set attempt_type = attempt.attempt_type or 'lesson_list' %}
+                {% if attempt_type.startswith('course') %}Course-wide{% else %}Lesson{% endif %}
+                {% if attempt_type.endswith('random') %} · Random{% else %} · List{% endif %}
+                {% if lesson %}<div class="admin-note">Week {{ lesson.week }} – {{ lesson.title }}</div>{% endif %}
+              </td>
+              <td>{% if attempt.is_complete %}Completed{% else %}In progress{% endif %}</td>
+              <td>
+                {% if attempt.is_complete %}
+                  {{ attempt.score }}/{{ attempt.total_questions }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td>{{ attempt.created_at.strftime('%d %b %Y, %H:%M') if attempt.created_at else '—' }}</td>
+              <td>
+                {% if attempt.is_complete %}
+                  <details>
+                    <summary>View</summary>
+                    <div class="history-detail">
+                      {% for item in row.answers %}
+                        <div class="result-question {% if item.is_correct %}correct{% else %}incorrect{% endif %}" style="text-align:left;">
+                          <p class="question">{{ item.question }}</p>
+                          <p><strong>Your answer:</strong> {% if item.selected %}{{ item.selected }} — {{ item.options.get(item.selected) or 'N/A' }}{% else %}—{% endif %} | <strong>Correct:</strong> {{ item.correct }} — {{ item.options.get(item.correct) or 'N/A' }}</p>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  </details>
+                {% else %}
+                  <span class="note">Partial progress saved.</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="note">No revision attempts yet. Pick a lesson or revise the entire course to get started.</p>
+    {% endif %}
+  </section>
+</div>
+
+<style>
+.course-revision {
+  max-width: 960px;
+  margin: 40px auto;
+  padding: 0 20px 60px;
+  color: #eaf0ff;
+}
+.revision-header h2 { margin-bottom: 8px; }
+.revision-header p { margin-bottom: 18px; color: #a8b3d8; }
+.revision-header .btn { display: inline-block; margin-top: 6px; }
+.course-wide {
+  margin-top: 24px;
+  background: rgba(17, 22, 40, 0.85);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(67, 95, 178, 0.35);
+}
+.course-wide-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.lesson-selector {
+  margin-top: 30px;
+  background: rgba(17, 22, 40, 0.85);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(67, 95, 178, 0.35);
+}
+.lesson-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.lesson-card {
+  background: rgba(26, 31, 54, 0.92);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lesson-card.is-active {
+  border-color: rgba(116, 169, 255, 0.65);
+  box-shadow: 0 0 12px rgba(116, 169, 255, 0.2);
+}
+.lesson-card h4 { margin: 0; color: #7eb8fe; }
+.lesson-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.lesson-actions .btn { flex: 1 1 110px; text-align: center; }
+.btn {
+  background: linear-gradient(135deg, #5b7cfa, #3646b3);
+  color: #0b1022;
+  padding: 8px 14px;
+  border-radius: 14px;
+  text-decoration: none;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+.btn.ghost {
+  background: rgba(94, 124, 250, 0.18);
+  color: #d5ddff;
+  border: 1px solid rgba(94, 124, 250, 0.35);
+}
+.btn.primary {
+  background: linear-gradient(135deg, #46d69f, #1f9261);
+  color: #031421;
+}
+.revision-session {
+  margin-top: 32px;
+  background: rgba(17, 22, 40, 0.9);
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid rgba(94, 124, 250, 0.35);
+}
+.revision-session header h3 { margin: 0 0 4px; }
+.revision-session .note { color: #94a7e8; margin: 0 0 16px; }
+.quiz-card {
+  background: rgba(31, 41, 79, 0.9);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(94, 124, 250, 0.25);
+}
+.quiz-card .question { font-weight: 600; margin-bottom: 12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.lesson-chip {
+  background: rgba(94, 124, 250, 0.2);
+  color: #c7d7ff;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+.quiz-card .option {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 8px 12px !important;
+  border-radius: 10px !important;
+  margin-bottom: 8px !important;
+  background: rgba(14, 18, 33, 0.6) !important;
+  justify-content: flex-start !important;
+  /* Critical: Ensure proper container width */
+  width: 100% !important;
+  min-width: 400px !important;
+  max-width: 100% !important;
+  /* Prevent text wrapping issues */
+  flex-wrap: nowrap !important;
+  flex-direction: row !important;
+  /* Contain content properly */
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+.quiz-card .option input { 
+  accent-color: #5b7cfa !important;
+  margin: 0 10px 0 0 !important;
+  flex-shrink: 0 !important;
+}
+.quiz-card .option .badge {
+  flex: 0 0 auto !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+.quiz-card .option span:last-child {
+  /* CRITICAL: Fix character-by-character text display */
+  display: block !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  text-align: left !important;
+  /* Ensure proper text flow */
+  writing-mode: horizontal-tb !important;
+  direction: ltr !important;
+  unicode-bidi: normal !important;
+  /* Proper flex behavior */
+  flex: 1 !important;
+  min-width: 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  /* Text styling */
+  line-height: 1.4 !important;
+  font-size: inherit !important;
+  /* Prevent any transforms */
+  text-transform: none !important;
+}
+
+/* Additional container fixes */
+.quiz-card {
+  background: rgba(31, 41, 79, 0.9) !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  margin-bottom: 18px !important;
+  border: 1px solid rgba(94, 124, 250, 0.25) !important;
+  /* Ensure proper width */
+  width: 100% !important;
+  min-width: 500px !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Force proper text rendering globally */
+.course-revision * {
+  writing-mode: horizontal-tb !important;
+  direction: ltr !important;
+  text-orientation: mixed !important;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(94, 124, 250, 0.25);
+  color: #8eb0ff;
+  font-weight: 700;
+}
+.form-actions { text-align: right; }
+.resume-banner {
+  margin-top: 22px;
+  background: rgba(255, 201, 96, 0.14);
+  border: 1px solid rgba(255, 201, 96, 0.5);
+  padding: 18px;
+  border-radius: 16px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  justify-content: space-between;
+  align-items:center;
+}
+.resume-actions { display:flex; gap:12px; }
+.history-section {
+  margin-top: 36px;
+  background: rgba(17, 22, 40, 0.85);
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid rgba(67, 95, 178, 0.35);
+}
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+.history-table th,
+.history-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(94, 124, 250, 0.15);
+}
+.history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.result-question {
+  background: rgba(31, 41, 79, 0.75);
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid rgba(94, 124, 250, 0.24);
+}
+.result-question.correct { border-color: rgba(70, 214, 159, 0.45); }
+.result-question.incorrect { border-color: rgba(255, 153, 153, 0.45); }
+.result-question .question { margin: 0 0 8px; font-weight: 600; }
+.result-question .options {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.note { color: #94a7e8; }
+.course-wide-actions .btn { flex: 1 1 150px; text-align: center; }
+@media (max-width: 640px) {
+  .lesson-actions, .course-wide-actions, .resume-actions { flex-direction: column; }
+  .btn { width: 100%; text-align: center; }
+}
+</style>
+
+
+{% endblock %}

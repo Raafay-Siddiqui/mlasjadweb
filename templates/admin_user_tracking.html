@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block title %}User Tracking{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="preload" href="{{ url_for('static', filename='css/admin.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-stack">
+    <header>
+      <h2 class="admin-page-title">📊 User Tracking — {{ target_user.full_name or target_user.username }}</h2>
+      <p class="admin-intro">Review detailed activity, quiz history, and Student Hub uploads for this user.</p>
+    </header>
+
+    <div class="admin-btn-row">
+      <a href="{{ url_for('admin_users') }}" class="admin-btn admin-btn--ghost admin-btn--small">⬅ Back to Manage Users</a>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="admin-alert">
+          <ul>
+            {% for message in messages %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="admin-card">
+      <h3>👤 Basic Info</h3>
+      <div class="admin-form" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div>
+          <strong>Username</strong>
+          <p>{{ target_user.username }}</p>
+        </div>
+        <div>
+          <strong>Full Name</strong>
+          <p>{{ target_user.full_name or '—' }}</p>
+        </div>
+        <div>
+          <strong>Email</strong>
+          <p>{{ target_user.email }}</p>
+        </div>
+        <div>
+          <strong>Role</strong>
+          <p>{{ target_user.role|capitalize }}</p>
+        </div>
+        <div>
+          <strong>Signup Date</strong>
+          <p>{{ target_user.created_at.strftime('%d %b %Y, %H:%M') if target_user.created_at else '—' }}</p>
+        </div>
+        <div>
+          <strong>Last Login</strong>
+          <p>{{ target_user.last_login.strftime('%d %b %Y, %H:%M') if target_user.last_login else '—' }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="admin-card">
+      <h3>📚 Course Progress</h3>
+      {% if tracked_courses %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Course</th>
+                <th>Year</th>
+                <th>Lessons</th>
+                <th>Current Week</th>
+                <th>Status</th>
+                <th>Finished?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in tracked_courses %}
+                {% set course = row.course %}
+                <tr>
+                  <td>{{ course.name|capitalize if course else 'Unknown course' }}</td>
+                  <td>{{ course.year if course else '—' }}</td>
+                  <td>{{ row.total_lessons }}</td>
+                  <td>{{ row.completed_weeks }}</td>
+                  <td>
+                    {% if row.completed_weeks > 0 %}
+                      Completed up to Week {{ row.completed_weeks }}
+                    {% else %}
+                      Not started yet
+                    {% endif %}
+                  </td>
+                  <td>
+                    <form action="{{ url_for('mark_course_finished', user_id=target_user.id, course_id=course.id) }}" method="POST" style="display:inline">
+                      {% if row.progress and row.progress.is_finished %}
+                        <button type="submit" class="admin-btn admin-btn--small" style="background: #10b981; color: #fff; border: none; padding: 6px 12px; cursor: pointer;">
+                          ✅ Finished
+                        </button>
+                      {% else %}
+                        <button type="submit" class="admin-btn admin-btn--small admin-btn--ghost" style="padding: 6px 12px;">
+                          Mark Finished
+                        </button>
+                      {% endif %}
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-intro">No course assignments found for this user.</p>
+      {% endif %}
+    </div>
+
+    <div class="admin-card">
+      <h3>🧠 Quiz History</h3>
+      {% if quiz_rows %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Course &amp; Lesson</th>
+                <th>Latest Score</th>
+                <th>Correct / Wrong</th>
+                <th>Attempts</th>
+                <th>Last Attempt</th>
+                <th>Details &amp; Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in quiz_rows %}
+                {% set attempt = row.attempt %}
+                <tr>
+                  <td>
+                    <div><strong>{{ row.course_label }}</strong></div>
+                    <div class="admin-note">{{ row.quiz_label }}</div>
+                  </td>
+                  <td>{{ row.score_percent }}% ({{ attempt.last_score }}/{{ row.total_questions }})</td>
+                  <td>{{ attempt.correct_count }} / {{ attempt.wrong_count }}</td>
+                  <td>{{ attempt.attempt_count }}</td>
+                  <td>{{ attempt.last_attempt_at.strftime('%d %b %Y, %H:%M') if attempt.last_attempt_at else '—' }}</td>
+                  <td>
+                    <details>
+                      <summary class="admin-btn admin-btn--ghost admin-btn--small" style="display:inline-flex;">View Answers</summary>
+                      <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px;">
+                        {% if row.wrong_details %}
+                          {% for item in row.wrong_details %}
+                            <div style="background:rgba(255,157,157,0.1); padding:12px; border-radius:12px;">
+                              <div><strong>Question:</strong> {{ item.question }}</div>
+                              <div><strong>Selected:</strong> {{ item.selected or '—' }}</div>
+                              <div><strong>Correct:</strong> {{ item.correct }}</div>
+                            </div>
+                          {% endfor %}
+                        {% else %}
+                          <p class="admin-note">No incorrect answers on latest attempt.</p>
+                        {% endif %}
+                      </div>
+                    </details>
+                    <div class="admin-btn-row admin-btn-row--tight" style="margin-top:10px;">
+                      <form action="{{ url_for('admin_reset_quiz', user_id=target_user.id, lesson_id=attempt.lesson_id) }}" method="POST" onsubmit="return confirm('Reset quiz progress for this user?');">
+                        <input type="hidden" name="redirect" value="{{ request.full_path }}">
+                        <button type="submit" class="admin-btn admin-btn--ghost admin-btn--small">Reset Quiz</button>
+                      </form>
+                      <form action="{{ url_for('admin_force_pass_quiz', user_id=target_user.id, lesson_id=attempt.lesson_id) }}" method="POST" onsubmit="return confirm('Mark this quiz as passed for the user?');">
+                        <input type="hidden" name="redirect" value="{{ request.full_path }}">
+                        <button type="submit" class="admin-btn admin-btn--primary admin-btn--small">Mark as Passed</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-intro">No quiz attempts recorded for this user yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="admin-card">
+      <h3>🔁 Revision History</h3>
+      {% if revision_course_summary %}
+        <div class="admin-note" style="margin-bottom:12px;">Total revisions by course:</div>
+        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:18px;">
+          {% for summary in revision_course_summary %}
+            {% set course = summary.course %}
+            <span class="admin-btn admin-btn--ghost admin-btn--small" style="cursor:default;">
+              {% if course %}{{ course.name|capitalize }} (Year {{ course.year }}){% else %}Unknown course{% endif %} · {{ summary.count }}
+            </span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="admin-intro">No revision attempts recorded for this user.</p>
+      {% endif %}
+
+      <form method="get" class="admin-form" style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; margin-bottom:18px;">
+        <label style="flex:1 1 220px;">
+          <span>Filter by course</span>
+          <select name="revision_course_id" onchange="this.form.submit()">
+            <option value="">All courses</option>
+            {% for summary in revision_course_summary %}
+              {% set course = summary.course %}
+              <option value="{{ course.id if course else '' }}" {% if revision_course_filter and course and course.id == revision_course_filter %}selected{% endif %}>
+                {% if course %}{{ course.name|capitalize }} (Year {{ course.year }}){% else %}Unknown course{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="flex:1 1 220px;">
+          <span>Filter by quiz</span>
+          <select name="revision_lesson_id" {% if not revision_course_filter %}disabled{% endif %}>
+            <option value="">All lessons</option>
+            {% if revision_course_filter %}
+              {% for lesson in revision_lesson_options.get(revision_course_filter, []) %}
+                <option value="{{ lesson.id }}" {% if revision_lesson_filter == lesson.id %}selected{% endif %}>Week {{ lesson.week }} – {{ lesson.title }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </label>
+        <label style="flex:1 1 200px;">
+          <span>Sort by</span>
+          <select name="revision_sort" onchange="this.form.submit()">
+            <option value="recent" {% if revision_sort == 'recent' %}selected{% endif %}>Most recent</option>
+            <option value="oldest" {% if revision_sort == 'oldest' %}selected{% endif %}>Oldest first</option>
+            <option value="score_desc" {% if revision_sort == 'score_desc' %}selected{% endif %}>Highest score</option>
+            <option value="score_asc" {% if revision_sort == 'score_asc' %}selected{% endif %}>Lowest score</option>
+          </select>
+        </label>
+        <div style="flex:0 0 auto; display:flex; gap:10px;">
+          <button type="submit" class="admin-btn admin-btn--primary">Apply</button>
+          <a href="{{ url_for('admin_user_tracking', user_id=target_user.id) }}" class="admin-btn admin-btn--ghost">Reset</a>
+        </div>
+      </form>
+
+      {% if retake_rows %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Course</th>
+                <th>Lesson</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Revised</th>
+                <th>Wrong Questions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in retake_rows %}
+                {% set attempt = row.attempt %}
+                <tr>
+                  <td>{% if row.course %}{{ row.course.name|capitalize }} (Year {{ row.course.year }}){% else %}Unknown course{% endif %}</td>
+                  <td>{% if row.lesson %}Week {{ row.lesson.week }} – {{ row.lesson.title }}{% else %}Entire course{% endif %}</td>
+                  {% set attempt_type = attempt.attempt_type or 'lesson_list' %}
+                  <td>{% if attempt_type.startswith('course') %}Course-wide{% else %}Lesson{% endif %} · {% if attempt_type.endswith('random') %}Random{% else %}List{% endif %}</td>
+                  <td>{% if attempt.is_complete %}Completed{% else %}In progress{% endif %}</td>
+                  <td>{% if attempt.is_complete %}{{ row.score_percent }}% ({{ attempt.score }}/{{ attempt.total_questions }}){% else %}—{% endif %}</td>
+                  <td>{{ attempt.created_at.strftime('%d %b %Y, %H:%M') if attempt.created_at else '—' }}</td>
+                  <td>
+                    <details>
+                      <summary>{% if row.wrongs %}{{ row.wrongs|length }} wrong{% else %}View{% endif %}</summary>
+                      <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+                        {% if row.wrongs %}
+                          {% for item in row.wrongs %}
+                            <div style="background:rgba(255,157,157,0.1); padding:12px; border-radius:12px;">
+                              <div><strong>Question:</strong> {{ item.question }}</div>
+                              <div><strong>Your answer:</strong> {{ item.selected or '—' }}</div>
+                              <div><strong>Correct:</strong> {{ item.correct }}</div>
+                            </div>
+                          {% endfor %}
+                        {% else %}
+                          <p class="admin-note">No mistakes on this revision.</p>
+                        {% endif %}
+                      </div>
+                    </details>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-intro">No revision attempts match the current filters.</p>
+      {% endif %}
+    </div>
+
+    <div class="admin-card">
+      <h3>✅ Course Agreements</h3>
+      {% if agreement_rows %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Course</th>
+                <th>Status</th>
+                <th>Accepted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in agreement_rows %}
+                <tr>
+                  <td>
+                    {% if row.course %}
+                      {{ row.course.name|capitalize }} (Year {{ row.course.year }})
+                    {% else %}
+                      {{ row.course_label or 'Course unavailable' }}
+                    {% endif %}
+                  </td>
+                  <td>{% if row.accepted %}✅ Accepted{% else %}❌ Pending{% endif %}</td>
+                  <td>{% if row.accepted_at %}{{ row.accepted_at.strftime('%d %b %Y, %H:%M') }}{% else %}—{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-intro">No course access records available for this user.</p>
+      {% endif %}
+    </div>
+
+    <div class="admin-card">
+      <h3>📁 Student Hub Files</h3>
+      {% if student_files %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Uploaded</th>
+                <th>File</th>
+                <th>Size</th>
+                <th>Feedback</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for file in student_files %}
+                <tr>
+                  <td>{{ file.uploaded_at.strftime('%d %b %Y, %H:%M') }}</td>
+                  <td>{{ file.original_name }}</td>
+                  <td>{{ '%.1f' % (file.file_size / (1024 * 1024)) }} MB</td>
+                  <td>
+                    {% if file.feedback_grade or file.feedback_text %}
+                      <div><strong>Grade:</strong> {{ file.feedback_grade or '—' }}</div>
+                      <div><strong>Notes:</strong> {{ file.feedback_text or '—' }}</div>
+                    {% else %}
+                      <span class="admin-note">No feedback yet.</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="admin-btn-row admin-btn-row--tight">
+                      <a href="{{ url_for('student_hub_download', file_id=file.id) }}" class="admin-btn admin-btn--ghost admin-btn--small">Download</a>
+                      <form action="{{ url_for('admin_student_hub_delete', file_id=file.id) }}" method="POST" onsubmit="return confirm('Delete {{ file.original_name }}?');">
+                        <input type="hidden" name="redirect" value="{{ request.full_path }}">
+                        <button type="submit" class="admin-btn admin-btn--danger admin-btn--small">Delete</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-intro">No Student Hub files uploaded by this user.</p>
+      {% endif %}
+    </div>
+
+    <div class="admin-card">
+      <h3>🕒 Activity Log</h3>
+      {% if activity_log %}
+        <ul style="list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:12px;">
+          {% for entry in activity_log %}
+            <li style="display:flex; gap:12px; align-items:flex-start;">
+              <span style="font-size:1.2rem; line-height:1;">{{ entry.icon }}</span>
+              <div>
+                <div style="font-weight:600;">{{ entry.label }}</div>
+                <div class="admin-note">{{ entry.timestamp.strftime('%d %b %Y, %H:%M') }}</div>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="admin-intro">No recent activity recorded.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

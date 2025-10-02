@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Leave a Review – Al-Baqi Academy{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<style>
+.review-container {
+  max-width: 700px;
+  margin: 60px auto;
+  padding: 24px;
+}
+
+.review-card {
+  background: var(--card);
+  backdrop-filter: blur(18px);
+  border-radius: var(--radius);
+  padding: 40px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(215, 169, 79, 0.3);
+}
+
+.review-card h1 {
+  margin: 0 0 8px;
+  color: var(--brand);
+  font-size: clamp(24px, 4vw, 32px);
+  text-align: center;
+}
+
+.course-info {
+  text-align: center;
+  color: var(--muted);
+  margin-bottom: 32px;
+  font-size: 1.05rem;
+}
+
+.course-info strong {
+  color: var(--text);
+}
+
+.form-group {
+  margin-bottom: 24px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(215, 169, 79, 0.3);
+  background: rgba(16, 23, 40, 0.6);
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(215, 169, 79, 0.2);
+}
+
+.form-group textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+/* Star Rating */
+.star-rating {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  font-size: 2.5rem;
+  margin-top: 12px;
+}
+
+.star-rating input[type="radio"] {
+  display: none;
+}
+
+.star-rating label {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 0;
+}
+
+.star-rating label:hover,
+.star-rating label:hover ~ label,
+.star-rating input[type="radio"]:checked ~ label {
+  color: #fbbf24;
+  transform: scale(1.1);
+}
+
+.star-rating label {
+  color: #4b5563;
+}
+
+.buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.btn {
+  flex: 1;
+  padding: 14px 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1rem;
+  border: none;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #d7a94f, #a76a20);
+  color: #1a1f2b;
+  box-shadow: var(--shadow);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(107, 114, 128, 0.3);
+  color: var(--text);
+  border: 1px solid rgba(107, 114, 128, 0.5);
+}
+
+.btn-secondary:hover {
+  background: rgba(107, 114, 128, 0.4);
+}
+
+.helper-text {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-top: 6px;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .review-card {
+    padding: 24px;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+
+  .star-rating {
+    font-size: 2rem;
+  }
+}
+</style>
+
+<div class="review-container">
+  <div class="review-card">
+    <h1>📝 Leave a Review</h1>
+    <div class="course-info">
+      Share your thoughts on <strong>{{ course.name }}</strong> (Year {{ course.year }})
+    </div>
+
+    <form method="POST">
+      <!-- Name -->
+      <div class="form-group">
+        <label for="name">Your Name</label>
+        <input type="text" id="name" name="name" value="{{ user.full_name or user.username }}" required>
+        <p class="helper-text">This is how your name will appear on the homepage.</p>
+      </div>
+
+      <!-- Rating -->
+      <div class="form-group">
+        <label>Your Rating</label>
+        <div class="star-rating">
+          <input type="radio" id="star5" name="rating" value="5" checked>
+          <label for="star5" title="5 stars">⭐</label>
+
+          <input type="radio" id="star4" name="rating" value="4">
+          <label for="star4" title="4 stars">⭐</label>
+
+          <input type="radio" id="star3" name="rating" value="3">
+          <label for="star3" title="3 stars">⭐</label>
+
+          <input type="radio" id="star2" name="rating" value="2">
+          <label for="star2" title="2 stars">⭐</label>
+
+          <input type="radio" id="star1" name="rating" value="1">
+          <label for="star1" title="1 star">⭐</label>
+        </div>
+        <p class="helper-text" style="text-align: center; margin-top: 12px;">
+          Click on the stars to rate (5 stars = excellent)
+        </p>
+      </div>
+
+      <!-- Review Text -->
+      <div class="form-group">
+        <label for="review">Your Review</label>
+        <textarea id="review" name="review" placeholder="Tell us about your experience with this course... What did you enjoy? What did you learn?" required></textarea>
+        <p class="helper-text">
+          Be honest and specific. Your review will help future students!
+        </p>
+      </div>
+
+      <!-- Buttons -->
+      <div class="buttons">
+        <button type="submit" class="btn btn-primary">✅ Submit Review</button>
+        <a href="{{ url_for('courses_dashboard') }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Star rating interaction - reverse order for proper CSS selection
+const stars = document.querySelectorAll('.star-rating label');
+const starInputs = document.querySelectorAll('.star-rating input[type="radio"]');
+
+// Highlight stars on hover
+stars.forEach((star, index) => {
+  star.addEventListener('mouseenter', () => {
+    stars.forEach((s, i) => {
+      if (i <= index) {
+        s.style.color = '#fbbf24';
+      } else {
+        s.style.color = '#4b5563';
+      }
+    });
+  });
+});
+
+// Reset stars on mouse leave
+document.querySelector('.star-rating').addEventListener('mouseleave', () => {
+  const checked = document.querySelector('.star-rating input[type="radio"]:checked');
+  if (checked) {
+    const checkedIndex = Array.from(starInputs).indexOf(checked);
+    stars.forEach((s, i) => {
+      if (i <= checkedIndex) {
+        s.style.color = '#fbbf24';
+      } else {
+        s.style.color = '#4b5563';
+      }
+    });
+  } else {
+    stars.forEach(s => s.style.color = '#4b5563');
+  }
+});
+
+// Initialize on load
+window.addEventListener('load', () => {
+  const checked = document.querySelector('.star-rating input[type="radio"]:checked');
+  if (checked) {
+    const checkedIndex = Array.from(starInputs).indexOf(checked);
+    stars.forEach((s, i) => {
+      if (i <= checkedIndex) {
+        s.style.color = '#fbbf24';
+      } else {
+        s.style.color = '#4b5563';
+      }
+    });
+  }
+});
+</script>
+{% endblock %}

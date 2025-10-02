@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+
+{% block title %}Al-Baqi Academy – Bilal Masjid Greenford{% endblock %}
+
+{% block body_class %}bg-calligraphy{% endblock %}
+
+{% block content %}
+<!-- Link to home.css for index-specific styles -->
+<link rel="preload" href="{{ url_for('static', filename='css/home.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+
+<!-- Swiper CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css">
+
+<!-- HERO -->
+<header class="hero">
+  <div class="container wrap">
+    <div>
+      <span class="tag">Bilal Masjid Greenford • Term-time classes</span>
+      <h1>The Foundation of Islam, made easy, explained clearly in English.</h1>
+      <p class="lead">
+        Beginner to advanced lessons — <strong>top quality recordings</strong>  
+        complete with self-study materials and quizzes. Join the diploma and learn at your own pace.
+      </p>
+      <div class="cta">
+      {% if session.get('user') %}
+        <a class="btn primary" href="{{ url_for('courses_dashboard') }}">Continue learning</a>
+        <a class="btn ghost" href="{{ url_for('profile') }}">Review my profile</a>
+      {% else %}
+        <a class="btn primary" href="{{ url_for('register') }}">Start the diploma</a>
+        <a class="btn ghost" href="{{ url_for('login') }}">Preview a sample course</a>
+      {% endif %}
+    </div>
+    <div class="cta secondary-cta">
+      <a class="btn ghost" href="#invite">Invite me for an event</a>
+    </div>
+    </div>
+    <aside class="hero-card" aria-label="Highlights">
+      <div style="font-weight:700; margin-bottom:6px">What you'll find here</div>
+      <div class="hero-list">
+        <div class="chip">80% of Quranic Arabic (Sarf & Nahw)</div>
+        <div class="chip">Stories of the Sahabah</div>
+        <div class="chip">Hadith selection & notes</div>
+        <div class="chip">Auto-marked quizzes + feedback</div>
+        <div class="chip">Weekly live classes & replays</div>
+        <div class="chip">Personal progress tracking</div>
+      </div>
+    </aside>
+  </div>
+</header>
+
+<!-- COURSES -->
+<section id="courses" aria-labelledby="courses-title">
+  <div class="container">
+    <h2 id="courses-title">Islamic Diploma</h2>
+    <p class="sub">Explore all available courses dynamically.</p>
+
+    {% set grouped = {} %}
+    {% for c in courses %}
+      {% if c.year not in grouped %}
+        {% set _ = grouped.update({c.year: []}) %}
+      {% endif %}
+      {% set _ = grouped[c.year].append(c) %}
+    {% endfor %}
+
+    {% for year, year_courses in grouped.items()|sort %}
+      <h3 style="margin-top:24px">Year {{ year }}</h3>
+      <div class="grid">
+        {% for course in year_courses %}
+          <article class="card">
+            <header>
+              <span class="badge">Year {{ course.year }}</span>
+              <h3>{{ course.name }}</h3>
+            </header>
+            <p class="sub">{{ course.description or "No description yet." }}</p>
+            <footer>
+              <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                Open lessons
+              </a>
+            </footer>
+          </article>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Q&A -->
+<section id="qa" aria-labelledby="qa-title">
+  <div class="container">
+    <div class="panel">
+      <!-- Show public questions -->
+      <h3 style="margin-top:0">💬 Public Q&A</h3>
+      {% for q in public_qs %}
+        <div style="margin-bottom:12px; padding:10px; background:#1a223f; border-radius:8px">
+          <!-- Always prefix with "Question:" -->
+          <p><strong>Question:</strong> {{ q.title }}</p>
+
+          <div style="margin-top:6px">
+            {% set msgs = q.messages|sort(attribute='created_at') %}
+            {% if msgs|length > 0 %}
+              {% for msg in msgs[-3:] %}
+                <p style="margin:6px 0; padding-left:10px; border-left:2px solid {% if msg.sender == 'admin' %}#d7a94f{% else %}#8b9fff{% endif %}">
+                  {{ msg.body }}
+                </p>
+              {% endfor %}
+            {% else %}
+              <p style="color:#aaa; font-style:italic">No responses yet.</p>
+            {% endif %}
+          </div>
+        </div>
+      {% else %}
+        <p style="color:#aaa">No public questions yet.</p>
+      {% endfor %}
+
+      <!-- Ask new question (only if logged in) -->
+      {% if session.get('user') %}
+        <form action="{{ url_for('new_question') }}" method="POST" style="margin-top:20px">
+          <input type="text" name="title" placeholder="Enter your question" required>
+          <label><input type="checkbox" name="is_public"> Make Public</label>
+          <button type="submit" class="btn primary">Ask Question</button>
+        </form>
+        <p style="margin-top:10px"><a href="{{ url_for('qa_dashboard') }}" class="btn">📂 View My Q&A</a></p>
+      {% else %}
+        <p style="margin-top:15px; color:#aaa">
+          Please <a href="{{ url_for('login') }}">log in</a> to ask a question or see your private Q&A.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section id="testimonials" aria-labelledby="testimonials-title">
+  <div class="container">
+    <h2 id="testimonials-title">💬 What Our Students Say</h2>
+    <p class="sub">Hear from students who've experienced our courses</p>
+
+    {% if testimonials %}
+    <!-- Swiper Carousel -->
+    <div class="swiper testimonialsSwiper">
+      <div class="swiper-wrapper">
+        {% for t in testimonials %}
+        <div class="swiper-slide">
+          <div class="testimonial-box">
+            <div class="testimonial-header">
+              <h3>{{ t.name }}</h3>
+              <div class="stars">
+                {% for i in range(1, 6) %}
+                  {% if i <= t.rating %}⭐{% else %}☆{% endif %}
+                {% endfor %}
+              </div>
+            </div>
+            <p class="testimonial-text">"{{ t.review }}"</p>
+            <p class="testimonial-course">— {{ t.course.name }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Navigation & Pagination -->
+      <div class="swiper-button-next"></div>
+      <div class="swiper-button-prev"></div>
+      <div class="swiper-pagination"></div>
+    </div>
+    {% else %}
+    <div style="text-align:center; padding:40px; color:var(--muted)">
+      <p>No testimonials yet. Be the first to leave a review!</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- ABOUT -->
+<section id="about" aria-labelledby="about-title">
+  <div class="container">
+    <h2 id="about-title">About Me</h2>
+    <p class="sub">Imam • Educator • Counsellor • Youth Lead • Prison &amp; Hospital Chaplain</p>
+    <p>Imam Asjad is currently serving as the Head Imam of Bilal Masjid Trust, Greenford, where he has been serving faithfully for 8 years. Known for his ability to connect deeply with the youth and wider society, he combines traditional scholarship with a modern, relatable approach to teaching. His weekly programs, Qur'an classes, and seminars have helped hundreds of students develop not only the ability to read and understand the Qur'an, but also a stronger sense of faith and purpose in their lives.</p>
+    <p>Moulana Asjad began his Islamic journey in the Wimbledon area, where he spent his early years. He completed his Hifz of the Holy Qur'an at Darul Uloom London and went on to pursue advanced Islamic studies and later the seven Qirā'āt at Darul Uloom Azaadville (Madrassah Arabia Islamia) in South Africa.</p>
+    <p>Beyond his local responsibilities, Imam Asjad has travelled widely to deliver lectures, engage in da'wah work, and take part in Islamic programs around the world. He continues to dedicate his life to spreading knowledge, building faith, and serving the community with sincerity. His vision for the future is to expand his outreach, inspire the next generation of Muslims, and make Islamic scholarship accessible, practical, and relevant to people in all walks of life.</p>
+  </div>
+</section>
+
+<!-- INVITE (formerly HIRE) -->
+<section id="invite" aria-labelledby="invite-title">
+  <div class="container">
+    <h2 id="invite-title">Invite for events &amp; request a lecture</h2>
+    <p class="sub">Talks, khutbahs, workshops, or private classes. Submit your request below and I'll get back to you.</p>
+
+    <form class="panel" action="mailto:asjad@AlBaqiAcademy.com?subject=New%20Event%20Enquiry" method="post" enctype="text/plain">
+      <div class="split">
+        <div>
+          <label for="name">Your name</label>
+          <input id="name" name="name" required />
+        </div>
+        <div>
+          <label for="email">Your Email</label>
+          <input id="email" type="email" name="email" required />
+        </div>
+        <div>
+          <label for="phone">Your Phone Number</label>
+          <input id="phone" name="phone" />
+        </div>
+        <div>
+          <label for="event">Event / Service type</label>
+          <select id="event" name="event">
+            <option>Khutbah</option>
+            <option>Talk / Halaqah</option>
+            <option>Workshop</option>
+            <option>Private tuition</option>
+            <option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="split">
+        <div>
+          <label for="date">Preferred date</label>
+          <input id="date" type="date" name="date" />
+        </div>
+        <div>
+          <label for="location">Location</label>
+          <input id="location" name="location" placeholder="e.g., Masjid name, area" />
+        </div>
+      </div>
+      <label for="msg">Details</label>
+      <textarea id="msg" name="message" placeholder="Tell me about the audience, topic, and timings…"></textarea>
+
+      <div style="margin-top:12px; display:flex; gap:10px">
+        <button class="btn primary" type="submit">Send request</button>
+        <a class="btn ghost" href="mailto:asjad@AlBaqiAcademy.com?subject=Event%20enquiry%20via%20site">Request via email</a>
+      </div>
+
+      <p class="sub" style="margin-top:8px">
+        This will open your email app and send the message directly to <strong>asjad@AlBaqiAcademy.com</strong>.
+      </p>
+    </form>
+
+    <!-- Additional Services -->
+    <div class="services" style="margin-top:24px; padding:20px; background:#1a223f; border-radius:8px">
+      <h3 style="margin-top:0">Additional Services</h3>
+      <ul style="list-style:none; padding:0; display:grid; gap:8px">
+        <li>✓ Nikah</li>
+        <li>✓ Marriage Coaching</li>
+        <li>✓ Counselling (Licensed &amp; trained counsellor)</li>
+        <li>✓ Will Writing</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container foot">
+    <div>© <span id="year"></span> Al-Baqi Academy</div>
+    <div class="right">Made with ☕ & dua • <a href="#about">About</a> • <a href="#invite">Invite</a></div>
+  </div>
+</footer>
+
+<script>
+  // Footer year
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  // Course filters
+  const grid = document.getElementById('courseGrid');
+  if (grid) {
+    const cards = Array.from(grid.querySelectorAll('.card'));
+    const q = document.getElementById('q');
+    const level = document.getElementById('level');
+    const format = document.getElementById('format');
+    const day = document.getElementById('day');
+
+    function applyFilters(){
+      const term = (q.value || '').toLowerCase().trim();
+      const lev = level.value;
+      const fmt = format.value;
+      const dy = day.value;
+
+      cards.forEach(card=>{
+        const title = card.dataset.title.toLowerCase();
+        const keywords = (card.dataset.keywords||'').toLowerCase();
+        const okQ = !term || title.includes(term) || keywords.includes(term);
+        const okL = !lev || card.dataset.level === lev;
+        const okF = !fmt || card.dataset.format === fmt;
+        const okD = !dy || card.dataset.day === dy;
+        card.style.display = (okQ && okL && okF && okD) ? '' : 'none';
+      });
+    }
+    [q,level,format,day].forEach(el=>el.addEventListener('input',applyFilters));
+  }
+
+  // Quizzes quick‑open helper
+  function openQuizzes(which){
+    if(which==='basic'){
+      const urls=[
+        'BasicArabicQuiz1.html',
+        'BasicArabicQuiz2.html',
+        'BasicArabicQuiz3.html'
+      ];
+      urls.forEach(u=>window.open(u,'_blank'));
+    }
+  }
+  window.openQuizzes = openQuizzes;
+</script>
+
+<!-- Swiper JS -->
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
+<!-- Testimonials Carousel Styling -->
+<style>
+#testimonials {
+  background: rgba(10, 15, 30, 0.5);
+  padding: 60px 24px;
+}
+
+.testimonialsSwiper {
+  padding: 40px 20px 60px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.testimonial-box {
+  background: var(--card);
+  backdrop-filter: blur(18px);
+  border-radius: var(--radius);
+  padding: 32px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(215, 169, 79, 0.2);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+}
+
+.testimonial-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.testimonial-header h3 {
+  margin: 0;
+  color: var(--brand);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.stars {
+  font-size: 1.2rem;
+  white-space: nowrap;
+  color: #fbbf24;
+}
+
+.testimonial-text {
+  font-style: italic;
+  color: var(--text);
+  line-height: 1.7;
+  flex: 1;
+  margin: 0 0 16px;
+  font-size: 1.05rem;
+}
+
+.testimonial-course {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+/* Swiper Navigation Buttons */
+.swiper-button-next,
+.swiper-button-prev {
+  color: var(--brand);
+  width: 44px;
+  height: 44px;
+  background: rgba(16, 23, 40, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
+  border: 1px solid rgba(215, 169, 79, 0.3);
+}
+
+.swiper-button-next:after,
+.swiper-button-prev:after {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.swiper-button-next:hover,
+.swiper-button-prev:hover {
+  background: rgba(215, 169, 79, 0.2);
+  border-color: var(--brand);
+}
+
+/* Swiper Pagination */
+.swiper-pagination-bullet {
+  background: var(--brand);
+  opacity: 0.5;
+  width: 12px;
+  height: 12px;
+}
+
+.swiper-pagination-bullet-active {
+  opacity: 1;
+  background: var(--brand);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .testimonial-box {
+    padding: 24px;
+    min-height: 260px;
+  }
+
+  .testimonial-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .swiper-button-next,
+  .swiper-button-prev {
+    width: 36px;
+    height: 36px;
+  }
+
+  .swiper-button-next:after,
+  .swiper-button-prev:after {
+    font-size: 16px;
+  }
+}
+</style>
+
+<!-- Initialize Swiper -->
+<script>
+  // Initialize testimonials carousel
+  const testimonialsSwiper = new Swiper('.testimonialsSwiper', {
+    slidesPerView: 1,
+    spaceBetween: 20,
+    loop: true,
+    autoplay: {
+      delay: 5000,
+      disableOnInteraction: false,
+    },
+    pagination: {
+      el: '.swiper-pagination',
+      clickable: true,
+    },
+    navigation: {
+      nextEl: '.swiper-button-next',
+      prevEl: '.swiper-button-prev',
+    },
+    breakpoints: {
+      640: {
+        slidesPerView: 2,
+        spaceBetween: 20,
+      },
+      1024: {
+        slidesPerView: 3,
+        spaceBetween: 24,
+      },
+    },
+  });
+</script>
+{% endblock %}

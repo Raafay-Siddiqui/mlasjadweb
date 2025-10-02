@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:900px; margin-top:40px; text-align:center">
+  <h2>{{ title }}</h2>
+
+  {% if video_file %}
+    <video 
+      width="100%" 
+      controls 
+      playsinline
+      disablePictureInPicture 
+      controlsList="nodownload noremoteplayback"
+      style="border-radius:12px; margin-top:20px; max-height:70vh"
+      oncontextmenu="return false;"
+      preload="metadata"
+    >
+      <source src="{{ url_for('static', filename=video_file) }}" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+  {% endif %}
+
+  {% if ppt_file %}
+    <iframe 
+      src="{{ url_for('static', filename=ppt_file) }}" 
+      style="width:100%; height:80vh; border:none; margin-top:20px; border-radius:12px"
+      oncontextmenu="return false;"
+      loading="lazy"
+    ></iframe>
+  {% endif %}
+</div>
+
+<!-- 🔒 Extra security to disable right-click + save shortcuts -->
+<script>
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && ['s','S','u','U','c','C'].includes(e.key)) {
+      e.preventDefault();
+    }
+  });
+</script>
+{% endblock %}

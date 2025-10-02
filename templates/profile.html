@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Profile – Al-Baqi Academy{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<style>
+.profile-nav {
+  max-width: 500px;
+  margin: 40px auto 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.profile-nav .btn {
+  padding: 12px 24px;
+  text-decoration: none;
+  border-radius: 12px;
+  font-weight: 600;
+  display: inline-block;
+  box-shadow: var(--shadow);
+  transition: all 0.2s ease;
+  flex: 1;
+  min-width: 140px;
+  text-align: center;
+}
+.profile-nav .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+.profile-nav .btn.stats {
+  background: linear-gradient(135deg, #2d7785, #3d8d9d);
+  color: #fff;
+}
+.profile-nav .btn.courses {
+  background: linear-gradient(135deg, #d7a94f, #a76a20);
+  color: #1a1f2b;
+}
+@media (max-width: 500px) {
+  .profile-nav {
+    flex-direction: column;
+  }
+  .profile-nav .btn {
+    width: 100%;
+  }
+}
+</style>
+
+<!-- Profile Navigation -->
+<div class="profile-nav">
+  <a href="{{ url_for('stats') }}" class="btn stats">
+    📊 View My Stats
+  </a>
+  <a href="{{ url_for('courses_dashboard') }}" class="btn courses">
+    📚 My Courses
+  </a>
+</div>
+
+<div class="card" style="max-width:500px; margin:auto; margin-top:0">
+  <h2>Profile Settings</h2>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-messages">
+        <ul>
+          {% for message in messages %}
+            <li>{{ message }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- Profile update form -->
+  <form method="POST" action="{{ url_for('profile') }}">
+    <input type="hidden" name="action" value="update_profile">
+    <input type="text" name="full_name" placeholder="Full Name" value="{{ user.full_name or '' }}">
+    <input type="number" name="age" placeholder="Age" value="{{ user.age or '' }}">
+    <input type="text" name="phone_number" placeholder="Phone Number" value="{{ user.phone_number or '' }}">
+    <input type="email" name="email" placeholder="Email" value="{{ user.email or '' }}">
+    <button type="submit">Update Profile</button>
+  </form>
+</div>
+
+<div class="card" style="max-width:500px; margin:auto; margin-top:20px">
+  <h2>Change Password</h2>
+  <form method="POST" action="{{ url_for('profile') }}">
+    <input type="hidden" name="action" value="change_password">
+    <input type="password" name="old_password" placeholder="Current Password" required>
+    <input type="password" name="new_password" placeholder="New Password" required>
+    <input type="password" name="confirm_password" placeholder="Confirm New Password" required>
+    <button type="submit">Change Password</button>
+  </form>
+</div>
+{% endblock %}

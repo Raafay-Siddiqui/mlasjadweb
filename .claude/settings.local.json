@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(./backup_database.sh)",
+      "Bash(crontab:*)",
+      "Bash(for i in {1..25})",
+      "Bash(do)",
+      "Bash(done)",
+      "Bash(for i in {1..15})",
+      "Bash(do sleep 0.1 ./backup_database.sh done)",
+      "Bash(for i in {1..10})",
+      "Bash(do:*)",
+      "Bash(for i in {1..8})",
+      "Bash(for i in 1 2 3 4 5)",
+      "Bash(printf \"=== BACKUP SYSTEM STATUS ===\\n\\n\")",
+      "Bash(printf \"\\nCurrent Backups: \")",
+      "Bash(printf \"\\nCron Job:\\n\")",
+      "Bash(printf \"\\n✅ System operational!\\n\")",
+      "Bash(pip freeze)",
+      "Bash(./venv/bin/pip freeze)",
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(pkill:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

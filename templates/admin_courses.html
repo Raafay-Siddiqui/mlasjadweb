@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+{% block title %}Manage Courses{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="preload" href="{{ url_for('static', filename='css/admin.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-stack">
+    <header>
+      <h2 class="admin-page-title">📚 Manage Courses</h2>
+      <p class="admin-intro">Upload lesson media, generate AI quizzes, and curate the curriculum.</p>
+    </header>
+
+    <div class="admin-btn-row">
+      <a href="{{ url_for('admin_dashboard') }}" class="admin-btn admin-btn--ghost admin-btn--small">⬅ Back to Admin Dashboard</a>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="admin-alert">
+          <ul>
+            {% for message in messages %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="admin-card">
+      <h3>➕ Add New Course</h3>
+      <form action="{{ url_for('add_course') }}" method="POST" class="admin-form">
+        <label>
+          <span>Course Name</span>
+          <input type="text" name="name" placeholder="e.g., Hadith" required>
+        </label>
+        <label>
+          <span>Year</span>
+          <select name="year" required>
+            <option value="1">Year 1</option>
+            <option value="2">Year 2</option>
+          </select>
+        </label>
+        <label>
+          <span>Course Type</span>
+          <select name="course_type" id="add_course_type" onchange="toggleParentSelect(this, 'add_parent_container')">
+            <option value="standalone">Standalone</option>
+            <option value="year_based">Year-based (Has Years/Sub-courses)</option>
+            <option value="sub_course">Sub-course</option>
+          </select>
+        </label>
+        <label id="add_parent_container" style="display:none;">
+          <span>Parent Course</span>
+          <select name="parent_id">
+            <option value="">-- Select Parent Course --</option>
+            {% for course in courses %}
+              <option value="{{ course.id }}">{{ course.name|capitalize }} (Year {{ course.year }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Order Index</span>
+          <input type="number" name="order_index" value="0" min="0">
+        </label>
+        <label>
+          <span>Price (leave empty for free)</span>
+          <input type="number" name="price" step="0.01" min="0" placeholder="e.g., 29.99">
+        </label>
+        <label>
+          <span>Publish Status</span>
+          <input type="checkbox" name="is_published" style="width: auto; margin-right: 8px;">
+          <span style="font-weight: normal;">Published (visible to students)</span>
+        </label>
+        <label>
+          <span>Description</span>
+          <textarea name="description" rows="3" placeholder="Short description of the course"></textarea>
+        </label>
+        <div class="admin-btn-row">
+          <button type="submit" class="admin-btn admin-btn--primary">➕ Add Course</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      function toggleParentSelect(selectElement, containerId) {
+        const container = document.getElementById(containerId);
+        if (selectElement.value === 'sub_course') {
+          container.style.display = 'block';
+        } else {
+          container.style.display = 'none';
+        }
+      }
+    </script>
+
+    <div class="admin-card">
+      <h3>➕ Upload New Lesson</h3>
+      <form id="lessonForm" action="{{ url_for('upload_course_file') }}" method="POST" enctype="multipart/form-data" class="admin-form double">
+        <label>
+          <span>Course</span>
+          <select name="course" required>
+            {% for course in courses %}
+              <option value="{{ course.name }}">{{ course.name|capitalize }} (Year {{ course.year }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Year</span>
+          <select name="year" required>
+            <option value="1">Year 1</option>
+            <option value="2">Year 2</option>
+          </select>
+        </label>
+        <label>
+          <span>Week</span>
+          <input type="number" name="week" min="1" required>
+        </label>
+        <label>
+          <span>Lesson Title</span>
+          <input type="text" name="title" placeholder="e.g., Week 1: Introduction" required>
+        </label>
+        <label class="full-span">
+          <span>Upload Video (MP4/MOV/AVI)</span>
+          <input type="file" name="video_file" accept=".mp4,.mov,.avi">
+        </label>
+        <label class="full-span">
+          <span>Upload Slides (PPT/PDF)</span>
+          <input type="file" name="ppt_file" accept=".ppt,.pptx,.pdf">
+        </label>
+        <label>
+          <span>Number of AI Questions</span>
+          <input type="number" name="num_questions" value="3" min="1" max="20">
+        </label>
+        <div class="admin-ai-actions full-span">
+          <button type="button" id="generateBtn" class="admin-btn admin-btn--accent admin-btn--block">⚡ Generate AI Questions</button>
+          <span class="admin-note">Automatically drafts quiz questions from the uploaded slides.</span>
+        </div>
+        <div id="loadingMsg" class="admin-note full-span" hidden>⏳ Generating questions, please wait...</div>
+        <div id="aiResults" class="admin-ai-results full-span"></div>
+        <div class="full-span">
+          <button type="button" id="saveQuizBtn" class="admin-btn admin-btn--primary admin-btn--block" hidden>💾 Save Generated Quiz</button>
+        </div>
+        <label class="full-span">
+          <span>Quiz (manual, one question per line, last item = correct option number)</span>
+          <textarea name="quiz_data" rows="6" placeholder="Question,OptionA,OptionB,OptionC,2"></textarea>
+        </label>
+        <span class="admin-note full-span">Example: What is Iman?,Belief in Allah,Belief in Money,Belief in Cars,1</span>
+        <div class="admin-btn-row full-span">
+          <button type="submit" class="admin-btn admin-btn--primary">Upload Lesson</button>
+        </div>
+      </form>
+    </div>
+
+    <div>
+      <h3 class="admin-page-title">📖 Existing Courses &amp; Lessons</h3>
+    </div>
+
+    {% if courses %}
+      {% for course in courses %}
+        <div class="admin-card admin-course-card">
+          <div class="admin-course-header">
+            <div>
+              <h3>
+                {{ course.name|capitalize }} – Year {{ course.year }}
+                {% if course.course_type == 'sub_course' and course.parent %}
+                  <span style="font-size: 0.8em; color: #666;">(Sub-course of {{ course.parent.name }})</span>
+                {% endif %}
+                {% if not course.is_published %}
+                  <span style="font-size: 0.8em; color: #ff6b6b;">🔒 Draft</span>
+                {% else %}
+                  <span style="font-size: 0.8em; color: #51cf66;">✅ Published</span>
+                {% endif %}
+                {% if course.price %}
+                  <span style="font-size: 0.8em; color: #4dabf7;">💰 ${{ "%.2f"|format(course.price) }}</span>
+                {% else %}
+                  <span style="font-size: 0.8em; color: #51cf66;">🆓 Free</span>
+                {% endif %}
+              </h3>
+              <p class="admin-intro">{{ course.description or "No description yet." }}</p>
+              <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; color: #4dabf7;">✏️ Edit Course Details</summary>
+                <form action="{{ url_for('edit_course', course_id=course.id) }}" method="POST" class="admin-form" style="margin-top: 10px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                  <label>
+                    <span>Course Name</span>
+                    <input type="text" name="name" value="{{ course.name }}" required>
+                  </label>
+                  <label>
+                    <span>Year</span>
+                    <input type="number" name="year" value="{{ course.year }}" required>
+                  </label>
+                  <label>
+                    <span>Course Type</span>
+                    <select name="course_type" onchange="toggleParentSelect(this, 'edit_parent_{{ course.id }}')">
+                      <option value="standalone" {% if course.course_type == 'standalone' %}selected{% endif %}>Standalone</option>
+                      <option value="year_based" {% if course.course_type == 'year_based' %}selected{% endif %}>Year-based</option>
+                      <option value="sub_course" {% if course.course_type == 'sub_course' %}selected{% endif %}>Sub-course</option>
+                    </select>
+                  </label>
+                  <label id="edit_parent_{{ course.id }}" {% if course.course_type != 'sub_course' %}style="display:none;"{% endif %}>
+                    <span>Parent Course</span>
+                    <select name="parent_id">
+                      <option value="">-- Select Parent Course --</option>
+                      {% for c in courses %}
+                        {% if c.id != course.id %}
+                          <option value="{{ c.id }}" {% if course.parent_id == c.id %}selected{% endif %}>{{ c.name|capitalize }} (Year {{ c.year }})</option>
+                        {% endif %}
+                      {% endfor %}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Order Index</span>
+                    <input type="number" name="order_index" value="{{ course.order_index or 0 }}" min="0">
+                  </label>
+                  <label>
+                    <span>Price (leave empty for free)</span>
+                    <input type="number" name="price" step="0.01" min="0" value="{{ course.price or '' }}" placeholder="e.g., 29.99">
+                  </label>
+                  <label>
+                    <span>Publish Status</span>
+                    <input type="checkbox" name="is_published" {% if course.is_published %}checked{% endif %} style="width: auto; margin-right: 8px;">
+                    <span style="font-weight: normal;">Published (visible to students)</span>
+                  </label>
+                  <label>
+                    <span>Description</span>
+                    <textarea name="description" rows="3">{{ course.description or '' }}</textarea>
+                  </label>
+                  <button type="submit" class="admin-btn admin-btn--primary">💾 Update Course</button>
+                </form>
+              </details>
+            </div>
+            <form action="{{ url_for('delete_course', course_id=course.id) }}" method="POST" onsubmit="return confirm('⚠️ Delete this course and all its lessons & quizzes?');">
+              <button type="submit" class="admin-btn admin-btn--danger">🗑 Delete Course</button>
+            </form>
+          </div>
+          <div class="admin-table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Week</th>
+                  <th>Title</th>
+                  <th>Files</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for lesson in course.lessons %}
+                <tr>
+                  <td>{{ lesson.week }}</td>
+                  <td>{{ lesson.title }}</td>
+                  <td>
+                    {% if lesson.video_file %}
+                      <div>🎥 <a href="{{ url_for('static', filename=lesson.video_file) }}" target="_blank" rel="noopener">Video</a></div>
+                    {% endif %}
+                    {% if lesson.ppt_file %}
+                      <div>📂 <a href="{{ url_for('static', filename=lesson.ppt_file) }}" target="_blank" rel="noopener">Slides</a></div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="admin-btn-row admin-btn-row--tight">
+                      <a class="admin-btn admin-btn--ghost" href="{{ url_for('edit_lesson', lesson_id=lesson.id) }}">✏️ Edit</a>
+                      <form action="{{ url_for('delete_lesson', lesson_id=lesson.id) }}" method="POST" onsubmit="return confirm('Delete this lesson?');">
+                        <button type="submit" class="admin-btn admin-btn--danger">🗑 Delete</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="4" class="admin-empty-state">No lessons yet.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="admin-intro">No courses have been added yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+const lessonForm = document.getElementById('lessonForm');
+const quizDataField = lessonForm ? lessonForm.querySelector('textarea[name="quiz_data"]') : null;
+const generateBtn = document.getElementById('generateBtn');
+const saveBtn = document.getElementById('saveQuizBtn');
+const aiResultsContainer = document.getElementById('aiResults');
+const loadingMsg = document.getElementById('loadingMsg');
+
+const correctLetterToNumber = { A: '1', B: '2', C: '3' };
+
+const sanitizeCsvValue = (value = '') => value.replace(/\s+/g, ' ').replace(/,/g, ';').trim();
+
+function collectAiQuestions() {
+  if (!aiResultsContainer) return [];
+  const cards = aiResultsContainer.querySelectorAll('.admin-ai-card');
+  const lines = [];
+  cards.forEach(card => {
+    const inputs = card.querySelectorAll('input');
+    if (inputs.length < 4) { return; }
+    const [questionInput, optionAInput, optionBInput, optionCInput] = inputs;
+    const note = card.querySelector('.admin-note');
+    let correctLetter = 'A';
+    if (note) {
+      const noteText = note.textContent.split(':').pop() || '';
+      correctLetter = noteText.trim().charAt(0).toUpperCase();
+      if (!['A', 'B', 'C'].includes(correctLetter)) {
+        correctLetter = 'A';
+      }
+    }
+    const csvLine = [
+      sanitizeCsvValue(questionInput.value),
+      sanitizeCsvValue(optionAInput.value),
+      sanitizeCsvValue(optionBInput.value),
+      sanitizeCsvValue(optionCInput.value),
+      correctLetterToNumber[correctLetter] || '1'
+    ];
+    if (csvLine.slice(0, 4).every(Boolean)) {
+      lines.push(csvLine.join(','));
+    }
+  });
+  return lines;
+}
+
+if (generateBtn && lessonForm) {
+  generateBtn.addEventListener('click', async () => {
+    const form = new FormData(lessonForm);
+    let timerId = null;
+
+    if (aiResultsContainer) {
+      aiResultsContainer.innerHTML = '';
+    }
+    const startTime = Date.now();
+    if (loadingMsg) {
+      loadingMsg.hidden = false;
+      loadingMsg.textContent = '⏳ Generating… 0s elapsed';
+    }
+    if (saveBtn) {
+      saveBtn.hidden = true;
+    }
+    timerId = setInterval(() => {
+      if (!loadingMsg) return;
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      loadingMsg.textContent = `⏳ Generating… ${elapsed}s elapsed`;
+    }, 500);
+
+    try {
+      const res = await fetch("{{ url_for('generate_quiz_ajax') }}", {
+        method: 'POST',
+        body: form
+      });
+      const data = await res.json();
+
+      if (timerId) {
+        clearInterval(timerId);
+      }
+      if (loadingMsg) {
+        const totalSeconds = Math.floor((Date.now() - startTime) / 1000);
+        loadingMsg.hidden = false;
+        loadingMsg.textContent = `✅ Generated in ${totalSeconds}s`;
+      }
+
+      if (data.error) {
+        if (aiResultsContainer) {
+          aiResultsContainer.innerHTML = `<p class="admin-note admin-note--error">${data.error}</p>`;
+        }
+        return;
+      }
+
+      const escapeAttr = (value = '') => String(value).replace(/"/g, '&quot;');
+
+      if (aiResultsContainer) {
+        aiResultsContainer.innerHTML = '';
+        data.questions.forEach((q, index) => {
+          aiResultsContainer.innerHTML += `
+            <div class="admin-ai-card">
+              <label>
+                <span>Question ${index + 1}</span>
+                <input type="text" value="${escapeAttr(q.question)}" />
+              </label>
+              <label>
+                <span>Option A</span>
+                <input type="text" value="${escapeAttr(q.option_a)}" />
+              </label>
+              <label>
+                <span>Option B</span>
+                <input type="text" value="${escapeAttr(q.option_b)}" />
+              </label>
+              <label>
+                <span>Option C</span>
+                <input type="text" value="${escapeAttr(q.option_c)}" />
+              </label>
+              <p class="admin-note">Correct: ${q.correct_answer}</p>
+            </div>
+          `;
+        });
+      }
+
+      if (saveBtn) {
+        saveBtn.hidden = false;
+        saveBtn.textContent = '💾 Save Generated Quiz';
+      }
+      if (quizDataField) {
+        quizDataField.dataset.autofill = '';
+      }
+    } catch (error) {
+      if (timerId) {
+        clearInterval(timerId);
+      }
+      if (loadingMsg) {
+        loadingMsg.hidden = false;
+        loadingMsg.textContent = '⚠️ Generation failed';
+      }
+      if (aiResultsContainer) {
+        aiResultsContainer.innerHTML = `<p class="admin-note admin-note--error">Error: ${error.message}</p>`;
+      }
+      console.error('Quiz generation failed', error);
+    }
+  });
+}
+
+if (saveBtn && quizDataField) {
+  saveBtn.addEventListener('click', () => {
+    const lines = collectAiQuestions();
+    if (!lines.length) {
+      alert('No generated questions to save.');
+      return;
+    }
+    quizDataField.value = lines.join('\n');
+    quizDataField.dataset.autofill = 'true';
+    saveBtn.textContent = 'Saved to Quiz Field ✅';
+    setTimeout(() => {
+      saveBtn.textContent = '💾 Save Generated Quiz';
+    }, 4000);
+  });
+}
+
+if (lessonForm && quizDataField) {
+  lessonForm.addEventListener('submit', () => {
+    if (!quizDataField.value.trim()) {
+      const lines = collectAiQuestions();
+      if (lines.length) {
+        quizDataField.value = lines.join('\n');
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

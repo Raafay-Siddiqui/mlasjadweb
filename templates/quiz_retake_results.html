@@ -1,0 +1,26 @@
+{% set result = result_payload %}
+<div class="result-banner">
+  <strong>Result:</strong> {{ result.score }}/{{ result.total }} correct
+</div>
+<div class="result-answers">
+  {% for item in result.answers %}
+    <div class="result-question {% if item.is_correct %}correct{% else %}incorrect{% endif %}">
+      <p class="question">{{ item.question }}</p>
+      <ul class="options">
+        {% for letter, option in item.options.items() %}
+          {% set state = '' %}
+          {% if letter == item.correct %}
+            {% set state = 'is-correct' %}
+          {% elif letter == (item.selected or '') %}
+            {% set state = 'is-selected' %}
+          {% endif %}
+          <li class="option {{ state }}">
+            <span class="badge">{{ letter }}</span> {{ option }}
+            {% if letter == item.correct %}<small>Correct</small>{% elif letter == (item.selected or '') %}<small>Chosen</small>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+</div>
+<a class="btn" href="{{ url_for('course_quiz_retake', course_id=course.id, scope=scope, mode=view_mode) }}">🔁 Try Again</a>

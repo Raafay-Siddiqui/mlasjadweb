@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}My Stats – Al-Baqi Academy{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/stats.css') }}">
+
+<div class="stats-container">
+  <!-- Page Header -->
+  <div class="stats-header">
+    <h1>My Learning Stats</h1>
+    <p class="sub">Track your progress across courses and lessons</p>
+    <div class="nav-links">
+      <a href="{{ url_for('profile') }}" class="link">← Back to Profile</a>
+      <a href="{{ url_for('courses_dashboard') }}" class="link">View Courses</a>
+    </div>
+  </div>
+
+  <!-- KPI Cards - Big Numbers -->
+  <div class="kpi-grid">
+    <div class="kpi-card lessons">
+      <div class="kpi-icon">📚</div>
+      <div class="kpi-number">{{ lessons_completed }}</div>
+      <div class="kpi-label">Lessons Completed</div>
+    </div>
+
+    <div class="kpi-card courses">
+      <div class="kpi-icon">🎓</div>
+      <div class="kpi-number">{{ courses_completed }}</div>
+      <div class="kpi-label">Courses Completed</div>
+    </div>
+
+    <div class="kpi-card quizzes">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-number">{{ passed_quizzes }}</div>
+      <div class="kpi-label">Quizzes Passed</div>
+    </div>
+
+    <div class="kpi-card exams">
+      <div class="kpi-icon">📝</div>
+      <div class="kpi-number">{{ passed_exams }}</div>
+      <div class="kpi-label">Exams Passed</div>
+    </div>
+  </div>
+
+  <!-- Progress Section -->
+  <div class="progress-section">
+    <h2>Detailed Progress</h2>
+
+    <!-- Lessons Progress -->
+    <div class="progress-card">
+      <div class="progress-header">
+        <div>
+          <h3>📖 Lessons Completed</h3>
+          <p class="progress-ratio">{{ lessons_completed }} / {{ total_lessons }}</p>
+        </div>
+        <div class="progress-percentage">
+          {{ "%.0f"|format((lessons_completed / total_lessons * 100) if total_lessons > 0 else 0) }}%
+        </div>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar lessons-bar"
+             style="width: {{ (lessons_completed / total_lessons * 100) if total_lessons > 0 else 0 }}%">
+        </div>
+      </div>
+    </div>
+
+    <!-- Courses Progress -->
+    <div class="progress-card">
+      <div class="progress-header">
+        <div>
+          <h3>🎓 Courses Completed</h3>
+          <p class="progress-ratio">{{ courses_completed }} / {{ total_courses }}</p>
+        </div>
+        <div class="progress-percentage">
+          {{ "%.0f"|format((courses_completed / total_courses * 100) if total_courses > 0 else 0) }}%
+        </div>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar courses-bar"
+             style="width: {{ (courses_completed / total_courses * 100) if total_courses > 0 else 0 }}%">
+        </div>
+      </div>
+
+      {% if courses_completed == 0 %}
+      <p class="encouragement">Keep going! You're on your way to finishing your first course. 💪</p>
+      {% endif %}
+    </div>
+
+    <!-- Quiz Stats -->
+    <div class="progress-card">
+      <div class="progress-header">
+        <div>
+          <h3>✅ Quiz Performance</h3>
+          <p class="progress-ratio">{{ passed_quizzes }} passed out of {{ total_quiz_attempts }} attempts</p>
+        </div>
+        {% if total_quiz_attempts > 0 %}
+        <div class="progress-percentage">
+          {{ "%.0f"|format((passed_quizzes / total_quiz_attempts * 100)) }}%
+        </div>
+        {% endif %}
+      </div>
+      {% if total_quiz_attempts > 0 %}
+      <div class="progress-bar-container">
+        <div class="progress-bar quizzes-bar"
+             style="width: {{ (passed_quizzes / total_quiz_attempts * 100) }}%">
+        </div>
+      </div>
+      {% else %}
+      <p class="encouragement">Start taking quizzes to track your quiz performance!</p>
+      {% endif %}
+    </div>
+
+    <!-- Exam Stats -->
+    <div class="progress-card">
+      <div class="progress-header">
+        <div>
+          <h3>📝 Exam Performance</h3>
+          <p class="progress-ratio">{{ passed_exams }} passed out of {{ total_exam_attempts }} attempts</p>
+        </div>
+        {% if avg_exam_percentage is not none %}
+        <div class="progress-percentage">
+          {{ avg_exam_percentage }}%
+        </div>
+        {% endif %}
+      </div>
+      {% if total_exam_attempts > 0 %}
+      <div class="progress-bar-container">
+        <div class="progress-bar exams-bar"
+             style="width: {{ avg_exam_percentage or 0 }}%">
+        </div>
+      </div>
+      {% else %}
+      <p class="encouragement">Take your first exam to track your exam performance!</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Exam History -->
+  {% if exam_details %}
+  <div class="exam-history-section">
+    <h2>Recent Exam Attempts</h2>
+    <div class="exam-list">
+      {% for detail in exam_details %}
+      <div class="exam-item {{ 'passed' if detail.attempt.passed else 'failed' if detail.attempt.passed is not none else 'pending' }}">
+        <div class="exam-info">
+          <h3>{{ detail.exam.title }}</h3>
+          {% if detail.course %}
+          <p class="exam-course">{{ detail.course.name|capitalize }} (Year {{ detail.course.year }})</p>
+          {% endif %}
+          <p class="exam-date">{{ detail.attempt.end_time.strftime('%b %d, %Y') if detail.attempt.end_time else 'N/A' }}</p>
+        </div>
+        <div class="exam-score">
+          <div class="score-number">{{ detail.attempt.score }} / {{ detail.attempt.max_score }}</div>
+          <div class="score-percentage">{{ detail.percentage }}%</div>
+          {% if detail.attempt.passed %}
+          <div class="score-badge passed">✓ Passed</div>
+          {% elif detail.attempt.passed is not none %}
+          <div class="score-badge failed">✗ Failed</div>
+          {% else %}
+          <div class="score-badge pending">Pending</div>
+          {% endif %}
+        </div>
+        <a href="{{ url_for('exam_results', course_id=detail.course.id, exam_id=detail.exam.id, attempt_id=detail.attempt.id) }}" class="view-results-btn">View Results →</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Motivational Message -->
+  <div class="motivational-card">
+    <h3>🌟 Keep Learning!</h3>
+    {% if courses_completed > 0 %}
+      <p>Mashallah! You've completed {{ courses_completed }} course{{ 's' if courses_completed != 1 else '' }}.
+         Keep up the excellent work on your Islamic education journey!</p>
+    {% elif lessons_completed > 5 %}
+      <p>Alhamdulillah! You've completed {{ lessons_completed }} lessons.
+         You're making great progress. Keep going to complete your first course!</p>
+    {% elif lessons_completed > 0 %}
+      <p>Welcome to your learning journey! You've started with {{ lessons_completed }} lesson{{ 's' if lessons_completed != 1 else '' }}.
+         May Allah bless your pursuit of knowledge!</p>
+    {% else %}
+      <p>Begin your Islamic education journey today! Explore the courses and start learning.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

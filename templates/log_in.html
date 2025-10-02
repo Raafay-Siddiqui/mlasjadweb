@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Al-Baqi Academy – Login{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="logo-big"></div>
+  <h2>Login</h2>
+  <form method="POST" action="{{ url_for('login') }}">
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Login</button>
+  </form>
+
+  <p style="margin-top:15px; font-size:0.9rem; color:var(--muted)">
+    Don't have an account?
+    <a href="{{ url_for('register') }}" style="color:var(--brand)">Register here</a>
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Public Q&A - Al-Baqi Academy{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<div class="public-qa-container">
+  <header class="public-qa-header">
+    <h1>📚 Public Q&A</h1>
+    <p class="subtitle">Browse commonly asked questions and their answers</p>
+    {% if session.get('user') %}
+    <a href="{{ url_for('qa_dashboard') }}" class="btn-link">Ask Your Own Question →</a>
+    {% endif %}
+  </header>
+
+  {% if questions %}
+    <div class="qa-list">
+      {% for q in questions %}
+      <div class="qa-card">
+        <div class="qa-question">
+          <h3>{{ q.title }}</h3>
+          <p class="qa-meta">Asked by {{ q.user.full_name or 'Student' }} · {{ q.created_at.strftime('%b %d, %Y') if q.created_at else '' }}</p>
+        </div>
+
+        <div class="qa-messages">
+          {% for msg in q.messages %}
+            <div class="qa-message {{ 'admin-response' if msg.sender == 'admin' else 'user-message' }}">
+              <div class="message-header">
+                <strong class="sender">
+                  {% if msg.sender == 'admin' %}
+                    <span class="admin-badge">📝 Admin Response</span>
+                  {% else %}
+                    {{ q.user.full_name or 'Student' }}
+                  {% endif %}
+                </strong>
+                <span class="message-time">{{ msg.created_at.strftime('%b %d, %Y') if msg.created_at else '' }}</span>
+              </div>
+              <div class="message-body">{{ msg.body }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p>No public questions yet. Be the first to ask!</p>
+      {% if session.get('user') %}
+      <a href="{{ url_for('qa_dashboard') }}" class="btn-primary">Ask a Question</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+<style>
+.public-qa-container {
+  max-width: 900px;
+  margin: 40px auto;
+  padding: 24px;
+}
+
+.public-qa-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.public-qa-header h1 {
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+
+.subtitle {
+  font-size: 1.1rem;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.btn-link {
+  display: inline-block;
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: rgba(215, 169, 79, 0.15);
+  border: 1px solid rgba(215, 169, 79, 0.3);
+  color: var(--brand);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-link:hover {
+  background: rgba(215, 169, 79, 0.25);
+  border-color: var(--brand);
+  transform: translateY(-2px);
+}
+
+.qa-list {
+  display: grid;
+  gap: 24px;
+}
+
+.qa-card {
+  background: rgba(16, 23, 40, 0.9);
+  backdrop-filter: blur(18px);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.3s ease;
+}
+
+.qa-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+}
+
+.qa-question h3 {
+  font-size: 1.35rem;
+  color: var(--brand);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.qa-meta {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+
+.qa-messages {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.qa-message {
+  padding: 16px;
+  border-radius: 12px;
+  border-left: 3px solid transparent;
+}
+
+.qa-message.user-message {
+  background: rgba(139, 159, 255, 0.1);
+  border-left-color: #8b9fff;
+}
+
+.qa-message.admin-response {
+  background: rgba(215, 169, 79, 0.1);
+  border-left-color: var(--brand);
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sender {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.admin-badge {
+  color: var(--brand);
+}
+
+.message-time {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.message-body {
+  color: var(--text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--muted);
+}
+
+.empty-state p {
+  font-size: 1.1rem;
+  margin-bottom: 24px;
+}
+
+.btn-primary {
+  display: inline-block;
+  padding: 12px 28px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--brand), #c89a3d);
+  color: #13182c;
+  text-decoration: none;
+  font-weight: 600;
+  box-shadow: 0 8px 16px rgba(215, 169, 79, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(215, 169, 79, 0.35);
+}
+
+@media (max-width: 768px) {
+  .public-qa-container {
+    padding: 16px;
+  }
+
+  .qa-card {
+    padding: 20px;
+  }
+
+  .qa-question h3 {
+    font-size: 1.2rem;
+  }
+
+  .message-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>
+{% endblock %}

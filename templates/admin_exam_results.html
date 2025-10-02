@@ -1,0 +1,486 @@
+{% extends "base.html" %}
+{% block title %}{{ exam.title }} Analytics{% endblock %}
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<div class="admin-results-shell" id="exam-results"
+     data-exam-id="{{ exam.id }}"
+     data-attempt-url="{{ url_for('admin_exam_attempt_detail', attempt_id=0).replace('/0', '/') }}"
+     data-grade-url="{{ url_for('admin_exam_attempt_grade', attempt_id=0).replace('/0', '/') }}">
+  <header class="results-header">
+    <div>
+      <h1>📊 {{ exam.title }}</h1>
+      {% if course %}<p>Course: {{ course.name|capitalize }} (Year {{ course.year }})</p>{% endif %}
+    </div>
+    <a class="btn ghost" href="{{ url_for('admin_exam_edit', exam_id=exam.id) }}">✏️ Edit Exam</a>
+  </header>
+
+  <section class="analytics-grid">
+    <div class="analytic-card">
+      <span>Attempts</span>
+      <strong>{{ analytics.attempt_count }}</strong>
+    </div>
+    <div class="analytic-card">
+      <span>Average Score</span>
+      <strong>{% if analytics.average_score is not none %}{{ analytics.average_score }}{% else %}—{% endif %}</strong>
+    </div>
+    <div class="analytic-card">
+      <span>Highest Score</span>
+      <strong>{% if analytics.highest_score is not none %}{{ analytics.highest_score }}{% else %}—{% endif %}</strong>
+    </div>
+    <div class="analytic-card">
+      <span>Pass Rate</span>
+      <strong>{% if analytics.pass_rate is not none %}{{ analytics.pass_rate }}%{% else %}—{% endif %}</strong>
+    </div>
+    <div class="analytic-card">
+      <span>Average Duration (s)</span>
+      <strong>{% if analytics.average_duration is not none %}{{ analytics.average_duration|round(0, 'floor') }}{% else %}—{% endif %}</strong>
+    </div>
+    <div class="analytic-card">
+      <span>Most Missed Question</span>
+      <strong>{% if analytics.most_missed %}Q{{ analytics.most_missed.question_id }} ({{ '%0.0f'|format(analytics.most_missed.ratio * 100) }}% missed){% else %}—{% endif %}</strong>
+    </div>
+  </section>
+
+  <section class="question-stats">
+    <h2>Question Performance</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Question</th>
+          <th>Attempts</th>
+          <th>Correct</th>
+          <th>Incorrect</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in question_analytics %}
+        <tr>
+          <td>{{ row.question.text }}</td>
+          <td>{{ row.total }}</td>
+          <td>{{ row.correct }}</td>
+          <td>{{ row.incorrect }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="attempts-section">
+    <h2>Student Attempts</h2>
+    <table class="attempts-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Student</th>
+          <th>Score</th>
+          <th>Status</th>
+          <th>Submitted</th>
+          <th>Manual?</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for attempt in attempts_payload %}
+        <tr data-attempt-id="{{ attempt.attempt_id }}">
+          <td>{{ attempt.attempt_number }}</td>
+          <td>{{ attempt.user.name }}</td>
+          <td>
+            {% if attempt.max_score %}
+              {{ attempt.score }} / {{ attempt.max_score }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ attempt.status|replace('_',' ')|title }}</td>
+          <td>{{ attempt.end_time and attempt.end_time.split('T')[0] or '—' }}</td>
+          <td>{% if attempt.requires_manual_grading %}Yes{% else %}No{% endif %}</td>
+          <td><button class="btn ghost review-btn">Review</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<div class="modal" id="grade-modal" hidden>
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <header>
+      <h2 id="modal-title">Attempt Review</h2>
+      <button class="btn icon" id="modal-close">✕</button>
+    </header>
+    <div class="modal-body">
+      <div id="modal-meta"></div>
+      <div id="modal-answers"></div>
+      <div class="modal-footer">
+        <label>
+          <span>Overall Feedback</span>
+          <textarea id="modal-overall-feedback" rows="3"></textarea>
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="modal-status">
+            <option value="graded">Graded</option>
+            <option value="submitted">Submitted</option>
+          </select>
+        </label>
+        <button class="btn primary" id="modal-save">Save Grade</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="results-toast" hidden></div>
+
+<script>
+(function() {
+  const container = document.getElementById('exam-results');
+  if (!container) { return; }
+
+  const attemptUrlBase = container.dataset.attemptUrl;
+  const gradeUrlBase = container.dataset.gradeUrl;
+
+  const modal = document.getElementById('grade-modal');
+  const modalClose = document.getElementById('modal-close');
+  const modalTitle = document.getElementById('modal-title');
+  const modalMeta = document.getElementById('modal-meta');
+  const modalAnswers = document.getElementById('modal-answers');
+  const overallFeedbackInput = document.getElementById('modal-overall-feedback');
+  const statusSelect = document.getElementById('modal-status');
+  const modalSave = document.getElementById('modal-save');
+  const toast = document.getElementById('results-toast');
+
+  let activeAttemptId = null;
+  let attemptPayload = null;
+
+  function showToast(message, variant) {
+    if (!toast) { return; }
+    toast.textContent = message;
+    toast.className = 'toast ' + (variant || 'info');
+    toast.hidden = false;
+    setTimeout(() => { toast.hidden = true; }, 3000);
+  }
+
+  function openModal() {
+    modal.hidden = false;
+    modal.classList.add('is-open');
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    modal.classList.remove('is-open');
+    activeAttemptId = null;
+    attemptPayload = null;
+  }
+
+  function renderAttempt(attempt) {
+    modalTitle.textContent = `Attempt #${attempt.attempt_number} – ${attempt.user.name}`;
+    modalMeta.innerHTML = `
+      <p><strong>Score:</strong> ${attempt.score} / ${attempt.max_score}</p>
+      <p><strong>Status:</strong> ${attempt.status}</p>
+      <p><strong>Submitted:</strong> ${attempt.end_time || '—'}</p>
+    `;
+    overallFeedbackInput.value = attempt.overall_feedback || '';
+    statusSelect.value = attempt.status === 'graded' ? 'graded' : 'submitted';
+
+    modalAnswers.innerHTML = '';
+    attempt.answers.forEach(answer => {
+      const card = document.createElement('article');
+      card.className = 'answer-card';
+      const header = document.createElement('header');
+      header.innerHTML = `<h3>${answer.question_text || 'Question'}</h3><span>${answer.question_type}</span>`;
+
+      const response = document.createElement('div');
+      response.className = 'response';
+      if (answer.question_type === 'essay' || answer.question_type === 'long_answer' || answer.question_type === 'short_answer') {
+        response.innerHTML = `<strong>Student:</strong><p>${answer.response_data && answer.response_data.text ? answer.response_data.text : '<em>No response</em>'}</p>`;
+      } else if (answer.question_type === 'checkbox' || answer.question_type === 'multi_select') {
+        const items = (answer.response_data && answer.response_data.selected) || [];
+        response.innerHTML = `<strong>Student:</strong><p>${items.length ? items.join(', ') : '<em>No response</em>'}</p>`;
+      } else {
+        response.innerHTML = `<strong>Student:</strong><p>${answer.response_data && answer.response_data.selected ? answer.response_data.selected : '<em>No response</em>'}</p>`;
+      }
+
+      const grading = document.createElement('div');
+      grading.className = 'grading';
+      grading.innerHTML = `
+        <label><span>Points</span><input type="number" data-field="points" data-answer-id="${answer.id}" step="0.5" value="${answer.points_awarded || 0}"></label>
+        <label class="checkbox"><input type="checkbox" data-field="correct" data-answer-id="${answer.id}" ${answer.is_correct ? 'checked' : ''}> Correct</label>
+        <label class="stretch"><span>Feedback</span><textarea data-field="feedback" data-answer-id="${answer.id}" rows="2">${answer.feedback || ''}</textarea></label>
+      `;
+
+      card.appendChild(header);
+      card.appendChild(response);
+      if (answer.correct_answers && answer.correct_answers.length) {
+        const correct = document.createElement('p');
+        correct.className = 'correct-ref';
+        correct.innerHTML = `<strong>Correct:</strong> ${answer.correct_answers.join(', ')}`;
+        card.appendChild(correct);
+      }
+      card.appendChild(grading);
+      modalAnswers.appendChild(card);
+    });
+  }
+
+  function fetchAttempt(attemptId) {
+    fetch(attemptUrlBase + attemptId, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin'
+    })
+      .then(resp => resp.json())
+      .then(data => {
+        if (!data || !data.attempt) {
+          showToast('Unable to load attempt.', 'error');
+          return;
+        }
+        attemptPayload = data.attempt;
+        renderAttempt(attemptPayload);
+        openModal();
+      })
+      .catch(() => showToast('Unable to load attempt.', 'error'));
+  }
+
+  function collectGradingPayload() {
+    const answersPayload = [];
+    modalAnswers.querySelectorAll('[data-answer-id]').forEach(element => {
+      const answerId = Number(element.dataset.answerId);
+      if (!answersPayload.find(item => item.id === answerId)) {
+        answersPayload.push({ id: answerId });
+      }
+    });
+    answersPayload.forEach(item => {
+      const pointsInput = modalAnswers.querySelector(`input[data-field="points"][data-answer-id="${item.id}"]`);
+      const correctInput = modalAnswers.querySelector(`input[data-field="correct"][data-answer-id="${item.id}"]`);
+      const feedbackInput = modalAnswers.querySelector(`textarea[data-field="feedback"][data-answer-id="${item.id}"]`);
+      if (pointsInput) {
+        item.points_awarded = parseFloat(pointsInput.value) || 0;
+      }
+      if (correctInput) {
+        item.is_correct = correctInput.checked;
+      }
+      if (feedbackInput) {
+        item.feedback = feedbackInput.value.trim();
+      }
+    });
+    return {
+      answers: answersPayload,
+      overall_feedback: overallFeedbackInput.value.trim(),
+      status: statusSelect.value
+    };
+  }
+
+  modalSave.addEventListener('click', () => {
+    if (!activeAttemptId) { return; }
+    const payload = collectGradingPayload();
+    modalSave.disabled = true;
+    fetch(gradeUrlBase + activeAttemptId, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    })
+      .then(resp => resp.json())
+      .then(data => {
+        if (!data || data.error) {
+          showToast(data && data.error ? data.error : 'Unable to save grade.', 'error');
+          return;
+        }
+        showToast('Attempt graded.', 'success');
+        closeModal();
+        window.location.reload();
+      })
+      .catch(() => showToast('Unable to save grade.', 'error'))
+      .finally(() => {
+        modalSave.disabled = false;
+      });
+  });
+
+  modalClose.addEventListener('click', closeModal);
+  modal.addEventListener('click', event => {
+    if (event.target === modal) {
+      closeModal();
+    }
+  });
+
+  document.querySelectorAll('.review-btn').forEach(button => {
+    button.addEventListener('click', (event) => {
+      const row = event.target.closest('tr[data-attempt-id]');
+      if (!row) { return; }
+      activeAttemptId = row.dataset.attemptId;
+      fetchAttempt(activeAttemptId);
+    });
+  });
+})();
+</script>
+
+<style>
+.admin-results-shell {
+  max-width: 1100px;
+  margin: 40px auto;
+  padding: 24px;
+  background: rgba(12, 18, 36, 0.95);
+  border-radius: 22px;
+  box-shadow: 0 30px 50px rgba(0,0,0,0.45);
+  display: grid;
+  gap: 24px;
+}
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 18px;
+}
+.analytic-card {
+  background: rgba(9, 14, 30, 0.92);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  display: grid;
+  gap: 6px;
+}
+.analytic-card span {
+  color: #aeb8e5;
+  font-size: 0.85rem;
+}
+.analytic-card strong {
+  font-size: 1.4rem;
+}
+.question-stats table,
+.attempts-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(9, 14, 30, 0.92);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.question-stats th,
+.question-stats td,
+.attempts-table th,
+.attempts-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.attempts-table tbody tr:hover {
+  background: rgba(106, 160, 255, 0.08);
+}
+.btn.ghost {
+  background: rgba(255,255,255,0.14);
+  color: #f4f6ff;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+}
+.btn.primary {
+  background: linear-gradient(135deg, #ffd27f, #f6a25a);
+  color: #13182c;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+.modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.modal.is-open {
+  display: flex;
+}
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 24, 0.8);
+}
+.modal-content {
+  position: relative;
+  z-index: 1;
+  width: min(900px, 92%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: rgba(9, 14, 30, 0.96);
+  border-radius: 18px;
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.modal-content header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-body {
+  display: grid;
+  gap: 18px;
+}
+.answer-card {
+  background: rgba(12, 18, 40, 0.9);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.answer-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.grading {
+  display: grid;
+  gap: 12px;
+}
+.grading label {
+  display: grid;
+  gap: 6px;
+}
+.grading .checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.answer-card textarea,
+.answer-card input[type="number"],
+.modal textarea,
+.modal select {
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(7, 12, 28, 0.9);
+  color: #fff;
+  padding: 10px 12px;
+}
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(7, 12, 28, 0.92);
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 12px 18px;
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(0,0,0,0.4);
+}
+.toast.success { border-color: rgba(110,224,148,0.45); color: #b7ffd3; }
+.toast.error { border-color: rgba(255,142,142,0.45); color: #ffd5d5; }
+
+@media (max-width: 760px) {
+  .results-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>
+{% endblock %}

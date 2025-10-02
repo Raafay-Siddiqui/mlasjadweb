@@ -1,0 +1,1001 @@
+{% extends "base.html" %}
+{% block title %}{{ course.name|capitalize }}{% endblock %}
+{% block layout %}one-col{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+{% macro render_question_lines(text) %}
+  {% set ns = namespace(lines=[]) %}
+  {% for raw in (text or '').split('\n') %}
+    {% set trimmed = raw.strip() %}
+    {% if trimmed %}
+      {% set ns.lines = ns.lines + [trimmed] %}
+    {% endif %}
+  {% endfor %}
+  {% if ns.lines %}
+    <p class="question-main">{{ ns.lines[0] }}</p>
+    {% for line in ns.lines[1:] %}
+      <p class="question-sub">{{ line }}</p>
+    {% endfor %}
+  {% endif %}
+{% endmacro %}
+
+<h2 style="text-align:center; margin-bottom:10px">
+  📚 {{ course.name|capitalize }} – Year {{ course.year }}
+</h2>
+
+{% if course.description %}
+<p style="text-align:center; color:#a8b3d8; margin-bottom:20px">
+  {{ course.description }}
+</p>
+{% endif %}
+
+<div style="text-align:center; margin-bottom:28px;">
+  <a class="btn" style="display:inline-block; padding:10px 20px; border-radius:18px; background:linear-gradient(135deg, #5b7cfa, #3646b3); color:#0b1022; font-weight:600; text-decoration:none;" href="{{ url_for('course_quiz_retake', course_id=course.id) }}">📝 Retake Quiz / Revise</a>
+</div>
+
+{% set agreement_required = course_agreement is none %}
+<div class="course-disclaimer" data-expanded="false">
+  <div class="course-disclaimer__header">
+    <span>📜 Course Disclaimer – Please Read Carefully</span>
+    <button type="button" class="btn ghost" id="disclaimer-toggle">{% if agreement_required %}View Disclaimer{% else %}View Disclaimer{% endif %}</button>
+  </div>
+  <div class="course-disclaimer__content" hidden>
+    <ul>
+      <li>❌ You may not share, copy, or distribute any course files, PDFs, PowerPoints, videos, or other resources. All materials are for personal educational use only.</li>
+      <li>✅ You must complete all lessons in order before progressing. Skipping content is not allowed.</li>
+      <li>📝 You must attempt quizzes honestly. Cheating, sharing answers, or falsifying results is strictly prohibited.</li>
+      <li>⚠️ Misuse of your course access may result in account suspension or permanent ban without refund.</li>
+      <li>📚 All course content remains the intellectual property of Al-Baqi Academy. Unauthorized sharing may result in legal action.</li>
+    </ul>
+  </div>
+</div>
+
+{% if agreement_required %}
+<div class="course-agreement-modal" id="course-agreement-modal" data-course-name="{{ course.name }}" data-course-year="{{ course.year }}" data-submit-url="{{ url_for('accept_course_agreement', course_name=course.name, year=course.year) }}">
+  <div class="course-agreement-backdrop"></div>
+  <div class="course-agreement-card">
+    <h3>Course Disclaimer – Please Read Carefully</h3>
+    <div class="course-agreement-scroll">
+      <ul>
+        <li>❌ You may not share, copy, or distribute any course files, PDFs, PowerPoints, videos, or other resources. All materials are for personal educational use only.</li>
+        <li>✅ You must complete all lessons in order before progressing. Skipping content is not allowed.</li>
+        <li>📝 You must attempt quizzes honestly. Cheating, sharing answers, or falsifying results is strictly prohibited.</li>
+        <li>⚠️ Misuse of your course access may result in account suspension or permanent ban without refund.</li>
+        <li>📚 All course content remains the intellectual property of Al-Baqi Academy. Unauthorized sharing may result in legal action.</li>
+      </ul>
+    </div>
+    <label class="agreement-check">
+      <input type="checkbox" id="agreement-checkbox"> <span>I agree to these terms.</span>
+    </label>
+    <button type="button" class="btn primary" id="agreement-continue" disabled>
+      Continue
+      <span class="agreement-countdown-wrap">( <span class="agreement-countdown">20</span>s )</span>
+    </button>
+  </div>
+</div>
+{% endif %}
+
+<div class="course-weeks" id="course-weeks" data-locked="{{ 'true' if agreement_required else 'false' }}">
+  {% if agreement_required %}
+  <div class="course-lock-banner">⚠️ Lessons stay locked until you accept the course disclaimer.</div>
+  {% endif %}
+  {% for lesson in lessons %}
+    {% set feedback = (quiz_feedback if quiz_feedback and quiz_feedback['lesson_id'] == lesson.id else None) %}
+    {% set lesson_completed = progress > lesson.week %}
+    {% set locked_by_progress = progress < lesson.week %}
+    {% set locked_by_exam = locked_weeks and lesson.week in locked_weeks %}
+    {% set locking_exam = locking_exam_by_week.get(lesson.week) if locking_exam_by_week else None %}
+    {% set is_locked = locked_by_progress or locked_by_exam %}
+    {% if not is_locked %}
+    <!-- ✅ Unlocked lesson -->
+    <div class="week-card">
+      <div class="week-header" onclick="toggleWeek('week{{ lesson.week }}')">
+        📘 {{ lesson.title }}
+        {% if lesson_completed %}
+          <span class="status-chip">✅ Completed</span>
+        {% endif %}
+        <span class="toggle-icon">▼</span>
+      </div>
+      <div id="week{{ lesson.week }}" class="week-body{% if open_lesson_id == lesson.id %} active{% endif %}">
+
+        {% if lesson.ppt_file %}
+          <p><strong>Slides:</strong>
+            <a class="btn" href="{{ url_for('static', filename=lesson.ppt_file) }}" download>📂 Download Slides</a>
+          </p>
+        {% endif %}
+
+        {% if lesson.video_file %}
+          <p><strong>Lecture video:</strong></p>
+          <video width="100%" style="max-width:700px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.2);" controls preload="metadata">
+            <source src="{{ url_for('static', filename=lesson.video_file) }}" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+        {% endif %}
+
+        {% if lesson.quizzes %}
+          <p><strong>Quiz:</strong></p>
+
+          {% if feedback %}
+            <div class="quiz-summary {% if feedback['passed'] %}passed{% else %}failed{% endif %}">
+              <p><strong>Result:</strong> {{ feedback['score'] }}/{{ feedback['total'] }} correct &middot; need {{ feedback['required'] }} to pass.</p>
+            </div>
+
+            {% if feedback['passed'] %}
+              <div class="quiz-results disabled">
+                {% for item in feedback['details'] %}
+                  <div class="quiz-result {% if item['is_correct'] %}correct{% else %}incorrect{% endif %}">
+                    {{ render_question_lines(item['question']) }}
+                    <ul class="quiz-result-options">
+                      {% for letter, text in item['options'].items() %}
+                        {% set icon = '' %}
+                        {% if letter == item['correct'] %}
+                          {% set icon = '✅' %}
+                        {% elif letter == item['selected'] %}
+                          {% set icon = '❌' %}
+                        {% else %}
+                          {% set icon = '•' %}
+                        {% endif %}
+                        <li class="option {% if letter == item['correct'] %}correct{% elif letter == item['selected'] %}selected{% endif %}">
+                          <span class="icon">{{ icon }}</span>
+                          <span class="text">{{ text }}</span>
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                {% endfor %}
+              </div>
+              <p class="quiz-note">Quiz locked after success. Review the correct answers above.</p>
+            {% else %}
+              <a class="btn" href="{{ url_for('course_page', course_name=course.name, year=course.year, open=lesson.id, retake=lesson.id) }}">🔄 Retake Quiz</a>
+            {% endif %}
+
+          {% elif lesson_completed %}
+            <div class="quiz-results disabled">
+              {% for quiz in lesson.quizzes %}
+                <div class="quiz-result neutral">
+                  {{ render_question_lines(quiz.question) }}
+                  <ul class="quiz-result-options">
+                    {% set last_feedback = quiz_history.get(lesson.id) if quiz_history else None %}
+                    {% set selected = last_feedback['details'][loop.index0]['selected'] if last_feedback and last_feedback['details']|length > loop.index0 else None %}
+                    {% for letter, text in [('A', quiz.option_a), ('B', quiz.option_b), ('C', quiz.option_c)] %}
+                      {% if selected %}
+                        {% set icon = '•' %}
+                        {% if letter == quiz.correct_answer %}
+                          {% set icon = '✅' %}
+                        {% elif letter == selected %}
+                          {% set icon = '❌' %}
+                        {% endif %}
+                      {% else %}
+                        {% set icon = '•' %}
+                        {% if letter == quiz.correct_answer %}
+                          {% set icon = '✅' %}
+                        {% endif %}
+                      {% endif %}
+                      <li class="option {% if letter == quiz.correct_answer %}correct{% elif letter == selected %}selected{% endif %}">
+                        <span class="icon">{{ icon }}</span>
+                        <span class="text">{{ text }}</span>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endfor %}
+            </div>
+            <p class="quiz-note">Quiz completed. Great job!</p>
+          {% else %}
+            <form action="{{ url_for('submit_quiz', lesson_id=lesson.id) }}" method="POST" class="quiz-form">
+              {% for quiz in lesson.quizzes %}
+                <div class="quiz-question">
+                  {{ render_question_lines(quiz.question) }}
+                  <label class="quiz-option"><input type="radio" name="q{{ quiz.id }}" value="A"> <span>{{ quiz.option_a }}</span></label>
+                  <label class="quiz-option"><input type="radio" name="q{{ quiz.id }}" value="B"> <span>{{ quiz.option_b }}</span></label>
+                  <label class="quiz-option"><input type="radio" name="q{{ quiz.id }}" value="C"> <span>{{ quiz.option_c }}</span></label>
+                </div>
+              {% endfor %}
+              <button type="submit" class="btn primary">✅ Submit Quiz</button>
+            </form>
+          {% endif %}
+        {% endif %}
+
+      </div>
+    </div>
+    {% else %}
+    <!-- 🔒 Locked -->
+    <div class="week-card locked">
+      <div class="week-header">
+        🔒 Week {{ lesson.week }} (Locked – {% if locking_exam %}complete {{ locking_exam.exam.title }}{% else %}finish earlier lessons first{% endif %})
+      </div>
+    </div>
+    {% endif %}
+
+    {% set exam_list = exams_by_trigger.get(lesson.id) if exams_by_trigger else [] %}
+    {% if exam_list %}
+      {% for exam_state in exam_list %}
+        {% set exam = exam_state.exam %}
+        {% set panel_id = 'exam' ~ exam.id %}
+        <div class="week-card exam-card{% if exam_state.progress_unlocked %} completed{% endif %}">
+          <div class="week-header" onclick="toggleWeek('{{ panel_id }}')">
+            🎯 {{ exam.title }}
+            {% if exam.is_required %}<span class="status-chip status-chip--required">Required</span>{% else %}<span class="status-chip status-chip--optional">Optional</span>{% endif %}
+            {% if exam_state.passed %}
+              <span class="status-chip status-chip--success">Passed</span>
+            {% elif exam_state.status == 'in-progress' %}
+              <span class="status-chip status-chip--info">In progress</span>
+            {% elif exam_state.status == 'submitted' %}
+              <span class="status-chip status-chip--submitted">Submitted</span>
+            {% elif exam_state.status == 'graded' %}
+              <span class="status-chip status-chip--graded">Graded</span>
+            {% elif exam_state.passed is false %}
+              <span class="status-chip status-chip--danger">Not passed</span>
+            {% else %}
+              <span class="status-chip status-chip--neutral">Pending</span>
+            {% endif %}
+            <span class="toggle-icon">▼</span>
+          </div>
+          <div id="{{ panel_id }}" class="week-body">
+            {% if exam.description %}
+              <p class="exam-description">{{ exam.description }}</p>
+            {% endif %}
+            <div class="exam-meta">
+              <span>Duration: {{ exam.duration_minutes }} min</span>
+              <span>Pass Mark: {{ '%0.0f'|format(exam.pass_mark) }}%</span>
+              {% if exam.allow_retakes %}
+                <span>Retakes allowed</span>
+              {% else %}
+                <span>Retakes disabled</span>
+              {% endif %}
+              <span>Grading: {{ (exam.settings.grading_mode if exam.settings else 'automatic')|default('automatic')|capitalize }}</span>
+              {% if exam_state.unlock_on_submission %}
+                <span>Unlocks after submission</span>
+              {% endif %}
+            </div>
+            <div class="exam-actions">
+              <a class="btn primary" href="{{ url_for('exam_page', course_id=course.id, exam_id=exam.id) }}">
+                {% if exam_state.status == 'in-progress' %}
+                  Resume Exam
+                {% elif exam.allow_retakes and (exam_state.passed or exam_state.status in ['submitted', 'graded']) %}
+                  Retake Exam
+                {% elif exam_state.progress_unlocked and not exam.allow_retakes %}
+                  Review Exam
+                {% else %}
+                  Start Exam
+                {% endif %}
+              </a>
+              {% if exam_state.latest_attempt %}
+                <a class="btn ghost" href="{{ url_for('exam_results', course_id=course.id, exam_id=exam.id, attempt_id=exam_state.latest_attempt.id) }}">View Results</a>
+                <span class="exam-state-note">Last: {{ exam_state.latest_attempt.score|default(0) }}/{{ exam_state.latest_attempt.max_score|default(0) }}</span>
+              {% endif %}
+            </div>
+            {% if exam.is_required and not exam_state.progress_unlocked %}
+              <p class="exam-warning">Complete this exam to unlock the next lessons.</p>
+            {% elif exam_state.unlock_on_submission and exam_state.status == 'submitted' and not exam_state.passed %}
+              <p class="exam-info">Submission received. Lessons unlocked while grading is pending.</p>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+
+  {% if exams_by_trigger.get(0) %}
+    {% for exam_state in exams_by_trigger.get(0) %}
+      {% set exam = exam_state.exam %}
+      {% set panel_id = 'exam' ~ exam.id %}
+      <div class="week-card exam-card final-exam{% if exam_state.progress_unlocked %} completed{% endif %}">
+        <div class="week-header" onclick="toggleWeek('{{ panel_id }}')">
+          🏁 {{ exam.title }}
+          <span class="status-chip status-chip--optional">Final Exam</span>
+          {% if exam_state.passed %}
+            <span class="status-chip status-chip--success">Passed</span>
+          {% elif exam_state.status == 'in-progress' %}
+            <span class="status-chip status-chip--info">In progress</span>
+          {% elif exam_state.status == 'submitted' %}
+            <span class="status-chip status-chip--submitted">Submitted</span>
+          {% else %}
+            <span class="status-chip status-chip--neutral">Pending</span>
+          {% endif %}
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div id="{{ panel_id }}" class="week-body">
+          {% if exam.description %}
+            <p class="exam-description">{{ exam.description }}</p>
+          {% endif %}
+          <div class="exam-meta">
+            <span>Duration: {{ exam.duration_minutes }} min</span>
+            <span>Pass Mark: {{ '%0.0f'|format(exam.pass_mark) }}%</span>
+            <span>Grading: {{ (exam.settings.grading_mode if exam.settings else 'automatic')|default('automatic')|capitalize }}</span>
+            {% if exam_state.unlock_on_submission %}
+              <span>Unlocks after submission</span>
+            {% endif %}
+          </div>
+          <div class="exam-actions">
+            <a class="btn primary" href="{{ url_for('exam_page', course_id=course.id, exam_id=exam.id) }}">
+              {% if exam_state.status == 'in-progress' %}
+                Resume Exam
+              {% elif exam.allow_retakes and (exam_state.passed or exam_state.status in ['submitted', 'graded']) %}
+                Retake Exam
+              {% elif exam_state.progress_unlocked and not exam.allow_retakes %}
+                Review Exam
+              {% else %}
+                Start Exam
+              {% endif %}
+            </a>
+            {% if exam_state.latest_attempt %}
+              <a class="btn ghost" href="{{ url_for('exam_results', course_id=course.id, exam_id=exam.id, attempt_id=exam_state.latest_attempt.id) }}">View Results</a>
+            {% endif %}
+          </div>
+          {% if exam.is_required and not exam_state.progress_unlocked %}
+            <p class="exam-warning">Complete this exam to finish the course.</p>
+          {% elif exam_state.unlock_on_submission and exam_state.status == 'submitted' and not exam_state.passed %}
+            <p class="exam-info">Submission received. Course completion pending review.</p>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
+
+<script>
+function toggleWeek(id) {
+  const container = document.getElementById('course-weeks');
+  if (container && container.dataset.locked === 'true') {
+    return;
+  }
+  const section = document.getElementById(id);
+  if (section) {
+    section.classList.toggle('active');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const container = document.getElementById('course-weeks');
+  const modal = document.getElementById('course-agreement-modal');
+  const checkbox = modal ? modal.querySelector('#agreement-checkbox') : null;
+  const continueBtn = modal ? modal.querySelector('#agreement-continue') : null;
+  const countdownSpan = modal ? modal.querySelector('.agreement-countdown') : null;
+  const countdownWrap = modal ? modal.querySelector('.agreement-countdown-wrap') : null;
+  const lockBanner = document.querySelector('.course-lock-banner');
+  const disclaimer = document.querySelector('.course-disclaimer');
+  const disclaimerContent = document.querySelector('.course-disclaimer__content');
+  const disclaimerToggle = document.getElementById('disclaimer-toggle');
+
+  if (disclaimer && disclaimerToggle && disclaimerContent) {
+    const setExpanded = function (expanded) {
+      disclaimer.setAttribute('data-expanded', expanded ? 'true' : 'false');
+      if (expanded) {
+        disclaimerContent.removeAttribute('hidden');
+        disclaimerToggle.textContent = 'Hide Disclaimer';
+      } else {
+        disclaimerContent.hidden = true;
+        disclaimerToggle.textContent = 'View Disclaimer';
+      }
+    };
+
+    setExpanded(false);
+    disclaimerToggle.addEventListener('click', function () {
+      const expanded = disclaimer.getAttribute('data-expanded') === 'true';
+      setExpanded(!expanded);
+    });
+  }
+
+  if (container) {
+    if (container.dataset.locked === 'true') {
+      container.classList.add('is-locked');
+    } else {
+      container.classList.remove('is-locked');
+    }
+  }
+
+  if (!modal || !container || !continueBtn) {
+    return;
+  }
+
+  modal.classList.add('is-visible');
+  modal.setAttribute('aria-hidden', 'false');
+  container.classList.add('is-locked');
+
+  let remaining = 20;
+  let timerId = null;
+
+  const updateButtonState = function () {
+    if (countdownSpan) {
+      countdownSpan.textContent = remaining.toString();
+    }
+    if (countdownWrap) {
+      countdownWrap.style.display = remaining > 0 ? 'inline' : 'none';
+    }
+    const agreed = checkbox ? checkbox.checked : false;
+    continueBtn.disabled = remaining > 0 || !agreed;
+  };
+
+  updateButtonState();
+
+  timerId = window.setInterval(function () {
+    if (remaining > 0) {
+      remaining -= 1;
+      if (remaining <= 0) {
+        remaining = 0;
+        window.clearInterval(timerId);
+      }
+      updateButtonState();
+    }
+  }, 1000);
+
+  if (checkbox) {
+    checkbox.addEventListener('change', updateButtonState);
+  }
+
+  continueBtn.addEventListener('click', function () {
+    if (continueBtn.disabled) {
+      return;
+    }
+
+    continueBtn.classList.add('is-loading');
+    continueBtn.disabled = true;
+
+    const postUrl = modal.dataset.submitUrl || window.location.pathname.replace(/\/$/, '') + '/agreement';
+
+    fetch(postUrl, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin'
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('Failed to store agreement.');
+        }
+        return response.json().catch(function () {
+          return {};
+        });
+      })
+      .then(function () {
+        if (timerId) {
+          window.clearInterval(timerId);
+        }
+        modal.classList.remove('is-visible');
+        modal.setAttribute('aria-hidden', 'true');
+        container.dataset.locked = 'false';
+        container.classList.remove('is-locked');
+        if (lockBanner) {
+          lockBanner.remove();
+        }
+      })
+      .catch(function () {
+        alert('We could not confirm your agreement. Please try again.');
+        continueBtn.disabled = false;
+      })
+      .finally(function () {
+        continueBtn.classList.remove('is-loading');
+        updateButtonState();
+      });
+  });
+});
+</script>
+
+<style>
+.course-disclaimer {
+  width: 90%;
+  max-width: 1000px;
+  margin: 0 auto 24px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(19, 26, 50, 0.85);
+  color: #e0e5ff;
+}
+
+.course-disclaimer__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.course-disclaimer__header .btn {
+  margin-left: auto;
+}
+
+.course-disclaimer__content {
+  margin-top: 14px;
+  color: #cdd2f8;
+}
+
+.course-disclaimer__content ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  list-style: disc;
+}
+
+.course-agreement-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.course-agreement-modal.is-visible {
+  display: flex;
+}
+
+.course-agreement-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 9, 23, 0.76);
+}
+
+.course-agreement-card {
+  position: relative;
+  z-index: 1;
+  width: min(92%, 520px);
+  max-height: 90vh;
+  background: #111831;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 40px rgba(0, 0, 0, 0.35);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: #e0e5ff;
+}
+
+.week-card.exam-card {
+  border-left: 4px solid rgba(91, 124, 250, 0.45);
+}
+.week-card.exam-card.completed {
+  border-left-color: rgba(72, 225, 160, 0.6);
+}
+.exam-description {
+  margin: 0 0 10px;
+  color: #cbd7ff;
+}
+.exam-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #aeb8e5;
+}
+.exam-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.exam-state-note {
+  color: #9fb1ff;
+  font-size: 0.85rem;
+}
+.exam-warning {
+  margin: 6px 0 0;
+  color: #ffb7b7;
+  font-weight: 600;
+}
+.exam-info {
+  margin: 6px 0 0;
+  color: #b7c7ff;
+  font-weight: 500;
+}
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  margin-left: 6px;
+  background: rgba(255,255,255,0.14);
+  color: #f3f4ff;
+}
+.status-chip--required { background: rgba(255, 195, 125, 0.24); color: #ffdbaa; }
+.status-chip--optional { background: rgba(112, 220, 148, 0.2); color: #c6ffe1; }
+.status-chip--success { background: rgba(95, 205, 133, 0.2); color: #83ffb7; }
+.status-chip--danger { background: rgba(255, 138, 138, 0.25); color: #ffc7c7; }
+.status-chip--info { background: rgba(120, 170, 255, 0.25); color: #d1dcff; }
+.status-chip--graded { background: rgba(135, 236, 222, 0.25); color: #affff4; }
+.status-chip--neutral { background: rgba(255, 215, 128, 0.2); color: #ffe3ab; }
+.status-chip--submitted { background: rgba(133, 158, 255, 0.22); color: #d6dcff; }
+.final-exam .status-chip--optional { background: rgba(109, 139, 255, 0.22); color: #d2daff; }
+
+.course-agreement-card h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  text-align: center;
+}
+
+.course-agreement-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.course-agreement-card ul {
+  padding-left: 20px;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+  color: #cdd2f8;
+}
+
+.agreement-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  color: #cdd2f8;
+  cursor: pointer;
+}
+
+.agreement-check input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.agreement-check span {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.agreement-countdown-wrap {
+  margin-left: 6px;
+  font-weight: 500;
+  color: #90a3ff;
+}
+
+.course-lock-banner {
+  margin: 8px auto 16px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  background: rgba(9, 14, 32, 0.75);
+  color: #f6c177;
+  font-weight: 600;
+  text-align: center;
+}
+
+.course-weeks {
+  width: 90%;
+  max-width: 1000px;
+  margin: auto;
+  font-family: Arial, sans-serif;
+  position: relative;
+}
+
+.course-weeks.is-locked .week-card,
+.course-weeks[data-locked="true"] .week-card {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.course-weeks.is-locked .week-header,
+.course-weeks[data-locked="true"] .week-header {
+  cursor: not-allowed;
+}
+
+.course-weeks.is-locked::after,
+.course-weeks[data-locked="true"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(8, 12, 28, 0.65), rgba(8, 12, 28, 0.8));
+  pointer-events: none;
+}
+
+.week-card {
+  border: 1px solid #2e3650;
+  border-radius: 8px;
+  margin: 10px 0;
+  overflow: hidden;
+  background: #1a1f36;
+  color: #eaf0ff;
+}
+
+.week-header {
+  background: #2a314d;
+  padding: 12px 16px;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #3d64c7 !important;
+}
+
+.week-header:hover {
+  background: #3a4266;
+}
+
+.status-chip {
+  background: rgba(52, 211, 153, 0.12);
+  color: #48e1a0;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: 999px;
+  margin-right: auto;
+  margin-left: 12px;
+}
+
+.week-body {
+  display: none;
+  padding: 16px;
+  background: #1a1f36;
+  color: #173c9b !important;
+}
+
+.week-body.active {
+  display: block;
+}
+
+.toggle-icon {
+  font-size: 14px;
+  color: #aaa;
+}
+
+.locked .week-header {
+  background: #444;
+  color: #aaa !important;
+  cursor: not-allowed;
+}
+
+.quiz-question {
+  margin-bottom: 20px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(27, 34, 64, 0.85);
+  color: #e0e5ff !important;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.quiz-question .question-main,
+.quiz-result .question-main {
+  margin: 0;
+  font-weight: 600;
+  color: #f2f5ff !important;
+  word-wrap: break-word;
+  hyphens: auto;
+  line-height: 1.4;
+}
+
+.quiz-question .question-sub,
+.quiz-result .question-sub {
+  margin: 0;
+  color: #9fb1ff !important;
+  font-size: 0.95rem;
+}
+
+.quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  color: #d5dcff !important;
+  cursor: pointer;
+  line-height: 1.5;
+  padding: 12px 15px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  width: 100%;
+}
+
+.quiz-option input {
+  accent-color: #5c6bff;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  transform: scale(1.05);
+}
+
+.quiz-option span {
+  flex: 1;
+  min-width: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.quiz-summary {
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.quiz-summary.passed {
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(72, 225, 160, 0.3);
+  color: #48e1a0;
+}
+
+.quiz-summary.failed {
+  background: rgba(243, 114, 114, 0.12);
+  border: 1px solid rgba(243, 114, 114, 0.3);
+  color: #f37272;
+}
+
+.quiz-results {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.quiz-result {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(19, 26, 50, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  display: grid;
+  gap: 10px;
+}
+
+.quiz-result.correct {
+  border-color: rgba(72, 225, 160, 0.35);
+}
+
+.quiz-result.incorrect {
+  border-color: rgba(243, 114, 114, 0.35);
+}
+
+.quiz-result .question {
+  margin: 0 0 10px;
+  color: #e0e5ff;
+}
+
+.quiz-result-options {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+
+.quiz-result-options .option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cdd2f8;
+  min-width: 0;
+}
+
+.quiz-result-options .option .text {
+  flex: 1;
+  min-width: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.quiz-result-options .option.correct .text {
+  color: #48e1a0;
+}
+
+.quiz-result-options .option.selected:not(.correct) .text {
+  color: #f37272;
+}
+
+.quiz-results.disabled .option.incorrect .text {
+  color: #aeb4d9;
+}
+
+.quiz-results.disabled .option.correct .text {
+  color: #48e1a0;
+}
+
+.quiz-results.disabled .icon {
+  color: #7a81ab;
+}
+
+.quiz-results.disabled .option.correct .icon {
+  color: #48e1a0;
+}
+
+.quiz-result.neutral {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.quiz-result-options .icon {
+  width: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.quiz-note {
+  color: #aeb4d9;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 6px 12px;
+  background: #5c6bff;
+  color: white;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: #4caf50;
+}
+
+.btn.ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #b7c3ff;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn.is-loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.quiz-form button {
+  background: #5c6bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.quiz-form button:hover {
+  opacity: 0.9;
+}
+
+@media (max-width: 640px) {
+  .course-disclaimer,
+  .course-weeks {
+    width: 95%;
+  }
+
+  .course-agreement-card {
+    width: 94%;
+    padding: 20px;
+  }
+
+  .quiz-option {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .quiz-option input {
+    width: 16px;
+    height: 16px;
+  }
+
+  .quiz-question {
+    padding: 10px;
+  }
+}
+
+</style>
+
+{% endblock %}

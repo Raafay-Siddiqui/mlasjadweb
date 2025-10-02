@@ -1,0 +1,1394 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}New Exam{% else %}Edit Exam{% endif %}{% endblock %}
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<div class="forms-app" id="exam-builder"
+     data-exam='{{ exam|tojson }}'
+     data-courses='{{ courses_json|tojson }}'
+     data-save-url="{% if is_new %}{{ url_for('admin_exam_create') }}{% else %}{{ url_for('admin_exam_update', exam_id=exam.id) }}{% endif %}"
+     data-exam-id="{{ exam.id if exam else '' }}">
+  <header class="forms-bar">
+    <div class="forms-brand">
+      <div class="forms-icon"></div>
+      <div class="forms-title">Exam Builder</div>
+    </div>
+    <div class="forms-bar-actions">
+      <button class="icon-btn" id="preview-exam" type="button" title="Preview"><span class="icon">👁</span></button>
+      <button class="icon-btn" id="open-settings" type="button" title="Exam settings"><span class="icon">⚙</span></button>
+      <button class="btn primary" id="save-exam" type="button">Save</button>
+    </div>
+  </header>
+
+  <main class="forms-main">
+    <div class="forms-content" role="list">
+      <section class="forms-card forms-card--title">
+        <input type="text" id="exam-title" class="forms-title-input" placeholder="Untitled Exam">
+        <textarea id="exam-description" class="forms-description-input" placeholder="Form description"></textarea>
+      </section>
+
+      <div id="question-list"></div>
+    </div>
+
+    <aside class="forms-sidebar" aria-label="Builder actions">
+      <button class="fab fab--floating" data-action="add-question" type="button" title="Add question">➕</button>
+    </aside>
+  </main>
+</div>
+
+<div class="settings-drawer" id="settings-panel" hidden>
+  <div class="settings-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <header class="settings-header">
+      <h2 id="settings-title">Settings</h2>
+      <button class="icon-btn" id="close-settings" type="button" aria-label="Close"><span class="icon">✕</span></button>
+    </header>
+    <div class="settings-body">
+      <div class="settings-group">
+        <h3>General</h3>
+        <label class="settings-field">
+          <span>Timer (minutes)</span>
+          <input type="number" id="setting-duration" min="1" step="1" value="30">
+        </label>
+        <label class="settings-field">
+          <span>Passing score (%)</span>
+          <input type="number" id="setting-pass-mark" min="0" max="100" step="1" value="70">
+        </label>
+        <label class="settings-toggle">
+          <span>Shuffle questions</span>
+          <input type="checkbox" id="setting-shuffle">
+          <span class="toggle"></span>
+        </label>
+        <label class="settings-toggle">
+          <span>Allow retakes</span>
+          <input type="checkbox" id="setting-retakes" checked>
+          <span class="toggle"></span>
+        </label>
+        <label class="settings-toggle">
+          <span>Show feedback after submission</span>
+          <input type="checkbox" id="setting-feedback" checked>
+          <span class="toggle"></span>
+        </label>
+        <label class="settings-toggle">
+          <span>Unlock lessons after submission</span>
+          <input type="checkbox" id="setting-unlock">
+          <span class="toggle"></span>
+        </label>
+        <label class="settings-toggle">
+          <span>Required exam</span>
+          <input type="checkbox" id="setting-required">
+          <span class="toggle"></span>
+        </label>
+        <label class="settings-toggle">
+          <span>Active</span>
+          <input type="checkbox" id="setting-active" checked>
+          <span class="toggle"></span>
+        </label>
+        <label class="settings-toggle">
+          <span>Required to complete course</span>
+          <input type="checkbox" id="setting-completion">
+          <span class="toggle"></span>
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <h3>Course Linking</h3>
+        <label class="settings-field">
+          <span>Course</span>
+          <select id="setting-course">
+            <option value="">Standalone exam</option>
+          </select>
+        </label>
+        <label class="settings-field">
+          <span>Unlock after lesson</span>
+          <select id="setting-trigger">
+            <option value="">— None —</option>
+          </select>
+        </label>
+      </div>
+      <div class="settings-group">
+        <h3>Grading</h3>
+        <label class="radio-row"><input type="radio" name="grading-mode" value="automatic" checked> <span>Automatic grading</span></label>
+        <p class="settings-hint">Objective questions graded by points immediately; written answers require review.</p>
+        <label class="radio-row"><input type="radio" name="grading-mode" value="manual"> <span>Manual grading</span></label>
+        <p class="settings-hint">All responses held for admin scoring before finalizing.</p>
+      </div>
+    </div>
+    <footer class="settings-footer">
+      <button class="btn ghost" id="apply-settings" type="button">Done</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="builder-toast" hidden></div>
+
+<script>
+(function () {
+  const builder = document.getElementById('exam-builder');
+  if (!builder) { return; }
+
+  const examData = builder.dataset.exam ? JSON.parse(builder.dataset.exam) : null;
+  const courses = builder.dataset.courses ? JSON.parse(builder.dataset.courses) : [];
+  let saveUrl = builder.dataset.saveUrl;
+  let examId = builder.dataset.examId ? Number(builder.dataset.examId) : null;
+
+  const titleInput = document.getElementById('exam-title');
+  const descInput = document.getElementById('exam-description');
+  const questionList = document.getElementById('question-list');
+
+  const addQuestionBtn = document.querySelector('[data-action="add-question"]');
+  const saveButton = document.getElementById('save-exam');
+  const previewButton = document.getElementById('preview-exam');
+
+  const settingsPanel = document.getElementById('settings-panel');
+  const openSettingsBtn = document.getElementById('open-settings');
+  const closeSettingsBtn = document.getElementById('close-settings');
+  const doneSettingsBtn = document.getElementById('apply-settings');
+
+  const durationInput = document.getElementById('setting-duration');
+  const passMarkInput = document.getElementById('setting-pass-mark');
+  const shuffleToggle = document.getElementById('setting-shuffle');
+  const retakesToggle = document.getElementById('setting-retakes');
+  const feedbackToggle = document.getElementById('setting-feedback');
+  const unlockToggle = document.getElementById('setting-unlock');
+  const requiredToggle = document.getElementById('setting-required');
+  const activeToggle = document.getElementById('setting-active');
+  const completionToggle = document.getElementById('setting-completion');
+  const courseSelect = document.getElementById('setting-course');
+  const triggerSelect = document.getElementById('setting-trigger');
+  const gradingRadios = Array.from(document.querySelectorAll('input[name="grading-mode"]'));
+
+  const toast = document.getElementById('builder-toast');
+
+  const TYPE_OPTIONS = [
+    { value: 'multiple_choice', label: 'Multiple Choice' },
+    { value: 'checkbox', label: 'Checkboxes' },
+    { value: 'short_answer', label: 'Short Answer' },
+    { value: 'essay', label: 'Paragraph' }
+  ];
+
+  const questionDefaults = {
+    multiple_choice: { options: ['Option 1', 'Option 2'], correct_answers: [], config: {} },
+    checkbox: { options: ['Option 1', 'Option 2', 'Option 3'], correct_answers: [], config: {} },
+    short_answer: { options: [], correct_answers: [], config: {} },
+    essay: { options: [], correct_answers: [], config: { word_limit: 200 } }
+  };
+
+  const state = { questions: [] };
+  const questionSaveTimers = new Map();
+  let reorderTimer = null;
+
+  function showToast(message, variant) {
+    toast.textContent = message;
+    toast.className = 'toast ' + (variant || 'info');
+    toast.hidden = false;
+    window.clearTimeout(showToast._timer);
+    showToast._timer = window.setTimeout(() => {
+      toast.hidden = true;
+    }, 2800);
+  }
+
+  function openSettings() {
+    settingsPanel.hidden = false;
+    window.requestAnimationFrame(() => settingsPanel.classList.add('is-visible'));
+  }
+
+  function closeSettings() {
+    settingsPanel.classList.remove('is-visible');
+    window.setTimeout(() => {
+      settingsPanel.hidden = true;
+    }, 180);
+  }
+
+  openSettingsBtn.addEventListener('click', openSettings);
+  closeSettingsBtn.addEventListener('click', closeSettings);
+  doneSettingsBtn.addEventListener('click', closeSettings);
+  settingsPanel.addEventListener('click', (event) => {
+    if (event.target === settingsPanel) {
+      closeSettings();
+    }
+  });
+
+  function populateCourses() {
+    courses.forEach(course => {
+      const option = document.createElement('option');
+      option.value = course.id;
+      option.textContent = `${course.name} (Year ${course.year})`;
+      courseSelect.appendChild(option);
+    });
+  }
+
+  function populateLessons(courseId) {
+    triggerSelect.innerHTML = '<option value="">— None —</option>';
+    if (!courseId) { return; }
+    const course = courses.find(item => String(item.id) === String(courseId));
+    if (!course) { return; }
+    course.lessons.forEach(lesson => {
+      const option = document.createElement('option');
+      option.value = lesson.id;
+      option.textContent = `Week ${lesson.week}: ${lesson.title}`;
+      triggerSelect.appendChild(option);
+    });
+  }
+
+  courseSelect.addEventListener('change', () => {
+    populateLessons(courseSelect.value);
+  });
+
+  function cloneQuestionData(type) {
+    const defaults = questionDefaults[type] || questionDefaults.multiple_choice;
+    return {
+      id: null,
+      question_type: type,
+      text: '',
+      options: [...(defaults.options || [])],
+      correct_answers: [...(defaults.correct_answers || [])],
+      points: 1,
+      is_required: true,
+      config: { ...(defaults.config || {}) }
+    };
+  }
+
+  function normalizeQuestion(data) {
+    if (!data) { return null; }
+    return {
+      id: data.id,
+      question_type: data.question_type || data.type || 'multiple_choice',
+      text: data.text || '',
+      options: Array.isArray(data.options) ? [...data.options] : [],
+      correct_answers: Array.isArray(data.correct_answers) ? [...data.correct_answers] : [],
+      points: data.points !== undefined ? Number(data.points) : 0,
+      is_required: data.required !== undefined ? Boolean(data.required) : Boolean(data.is_required),
+      order_index: data.order_index !== undefined ? Number(data.order_index) : 0,
+      config: data.config ? { ...data.config } : {}
+    };
+  }
+
+  function sortQuestions() {
+    state.questions.sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+  }
+
+  function buildExamSettings() {
+    const duration = parseInt(durationInput.value, 10);
+    const passMark = parseFloat(passMarkInput.value);
+    const gradingRadio = gradingRadios.find(radio => radio.checked);
+    const gradingMode = gradingRadio ? gradingRadio.value : 'automatic';
+    return {
+      title: titleInput.value.trim() || 'Untitled Exam',
+      description: descInput.value.trim(),
+      duration_minutes: Number.isNaN(duration) ? 30 : duration,
+      pass_mark: Number.isNaN(passMark) ? 0 : passMark,
+      is_required: requiredToggle.checked,
+      allow_retakes: retakesToggle.checked,
+      is_active: activeToggle.checked,
+      required_to_complete_course: completionToggle.checked,
+      course_id: courseSelect.value || null,
+      trigger_lesson_id: triggerSelect.value || null,
+      settings: {
+        shuffle_questions: shuffleToggle.checked,
+        show_feedback: feedbackToggle.checked,
+        unlock_on_submission: unlockToggle.checked,
+        grading_mode: gradingMode
+      }
+    };
+  }
+
+  function buildQuestionPayload(question, indexOverride) {
+    return {
+      question_type: question.question_type,
+      text: question.text,
+      options: question.options,
+      correct_answers: question.correct_answers,
+      points: question.points,
+      is_required: question.is_required,
+      order_index: indexOverride !== undefined ? indexOverride : question.order_index,
+      config: question.config
+    };
+  }
+
+  async function ensureExamExists() {
+    if (examId) { return examId; }
+    const payload = buildPayload(false);
+    payload.questions = [];
+
+    const response = await fetch(saveUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error || !data.exam_id) {
+      showToast(data && data.error ? data.error : 'Unable to create exam record.', 'error');
+      throw new Error('exam-create-failed');
+    }
+
+    examId = Number(data.exam_id);
+    builder.dataset.examId = String(examId);
+    saveUrl = `/admin/exams/${examId}/save`;
+    builder.dataset.saveUrl = saveUrl;
+    return examId;
+  }
+
+  function scheduleQuestionSave(question) {
+    if (!question || !question.id) { return; }
+    if (questionSaveTimers.has(question.id)) {
+      window.clearTimeout(questionSaveTimers.get(question.id));
+    }
+    const timerId = window.setTimeout(() => {
+      questionSaveTimers.delete(question.id);
+      persistQuestion(question).catch(() => {});
+    }, 500);
+    questionSaveTimers.set(question.id, timerId);
+  }
+
+  async function persistQuestion(question) {
+    if (!question || !question.id) { return; }
+    await ensureExamExists();
+    const payload = buildQuestionPayload(question);
+
+    const response = await fetch(`/admin/exams/${examId}/questions/${question.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) {
+      showToast(data && data.error ? data.error : 'Failed to save question.', 'error');
+      throw new Error('question-save-failed');
+    }
+
+    if (data.question) {
+      const updated = normalizeQuestion(data.question);
+      const index = state.questions.findIndex(item => item.id === updated.id);
+      if (index !== -1) {
+        Object.assign(state.questions[index], updated);
+      }
+    }
+  }
+
+  async function persistQuestionOrder() {
+    if (!state.questions.length) { return; }
+    await ensureExamExists();
+    const order = state.questions.map(question => question.id);
+
+    const response = await fetch(`/admin/exams/${examId}/questions/reorder`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ order })
+    });
+
+    if (!response.ok) {
+      showToast('Unable to update question order.', 'error');
+    }
+  }
+
+  function scheduleReorderSave() {
+    if (reorderTimer) {
+      window.clearTimeout(reorderTimer);
+    }
+    reorderTimer = window.setTimeout(() => {
+      persistQuestionOrder().catch(() => {});
+    }, 350);
+  }
+
+  async function deleteQuestion(question) {
+    if (!question) { return; }
+    if (questionSaveTimers.has(question.id)) {
+      window.clearTimeout(questionSaveTimers.get(question.id));
+      questionSaveTimers.delete(question.id);
+    }
+    await ensureExamExists();
+    const url = `/admin/exams/${examId}/questions/${question.id}`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin'
+    });
+
+    if (!response.ok) {
+      showToast('Unable to delete question.', 'error');
+      return;
+    }
+
+    state.questions = state.questions.filter(item => item.id !== question.id);
+    renderQuestions();
+    scheduleReorderSave();
+  }
+
+  function renderOptionInputs(question, container) {
+    container.innerHTML = '';
+
+    if (!['multiple_choice', 'checkbox'].includes(question.question_type)) {
+      container.classList.add('is-empty');
+      return;
+    }
+
+    container.classList.remove('is-empty');
+    const isCheckbox = question.question_type === 'checkbox';
+
+    question.options.forEach((optionValue, index) => {
+      const row = document.createElement('div');
+      row.className = 'option-row';
+
+      const marker = document.createElement('span');
+      marker.className = 'option-marker ' + (isCheckbox ? 'option-marker--checkbox' : 'option-marker--radio');
+      row.appendChild(marker);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = optionValue;
+      input.placeholder = 'Option text';
+      input.className = 'option-input';
+      input.addEventListener('input', () => {
+        const oldValue = question.options[index];
+        question.options[index] = input.value;
+        question.correct_answers = (question.correct_answers || []).map(val => (val === oldValue ? input.value : val));
+        scheduleQuestionSave(question);
+      });
+      row.appendChild(input);
+
+      const control = document.createElement('label');
+      control.className = 'option-control';
+      if (!question.correct_answers) {
+        question.correct_answers = [];
+      }
+      const check = document.createElement('input');
+      check.type = isCheckbox ? 'checkbox' : 'radio';
+      check.name = `correct-${question.uid}`;
+      check.checked = isCheckbox ? question.correct_answers.includes(optionValue) : question.correct_answers[0] === optionValue;
+      check.addEventListener('change', () => {
+        if (isCheckbox) {
+          if (check.checked) {
+            if (!question.correct_answers.includes(optionValue)) {
+              question.correct_answers.push(optionValue);
+            }
+          } else {
+            question.correct_answers = question.correct_answers.filter(val => val !== optionValue);
+          }
+        } else {
+          question.correct_answers = [optionValue];
+        }
+        scheduleQuestionSave(question);
+      });
+      control.appendChild(check);
+      const controlLabel = document.createElement('span');
+      controlLabel.textContent = isCheckbox ? 'Correct' : 'Answer';
+      control.appendChild(controlLabel);
+      row.appendChild(control);
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'option-delete';
+      deleteBtn.textContent = '✕';
+      deleteBtn.addEventListener('click', () => {
+        question.options.splice(index, 1);
+        question.correct_answers = (question.correct_answers || []).filter(val => val !== optionValue);
+        renderOptionInputs(question, container);
+        scheduleQuestionSave(question);
+      });
+      row.appendChild(deleteBtn);
+
+      container.appendChild(row);
+    });
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'add-option';
+    addBtn.textContent = 'Add option';
+    addBtn.addEventListener('click', () => {
+      const label = `Option ${question.options.length + 1}`;
+      question.options.push(label);
+      renderOptionInputs(question, container);
+      scheduleQuestionSave(question);
+    });
+    container.appendChild(addBtn);
+  }
+
+  function renderResponsePreview(question, container) {
+    container.innerHTML = '';
+    if (question.question_type === 'short_answer') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.disabled = true;
+      input.placeholder = 'Short answer text';
+      container.appendChild(input);
+    } else if (question.question_type === 'essay') {
+      const textarea = document.createElement('textarea');
+      textarea.rows = 3;
+      textarea.disabled = true;
+      textarea.placeholder = 'Long answer text';
+      container.appendChild(textarea);
+    }
+  }
+
+  function renderAdvancedConfig(question, container) {
+    container.innerHTML = '';
+    if (question.question_type === 'short_answer') {
+      const label = document.createElement('label');
+      label.className = 'config-field';
+      label.innerHTML = '<span>Accepted answers (comma separated)</span>';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = (question.correct_answers || []).join(', ');
+      input.placeholder = 'e.g. Badr, Battle of Badr';
+      input.addEventListener('input', () => {
+        question.correct_answers = input.value.split(',').map(value => value.trim()).filter(Boolean);
+        scheduleQuestionSave(question);
+      });
+      label.appendChild(input);
+      container.appendChild(label);
+    }
+    if (question.question_type === 'essay') {
+      const wordLabel = document.createElement('label');
+      wordLabel.className = 'config-field';
+      wordLabel.innerHTML = '<span>Word limit</span>';
+      const wordInput = document.createElement('input');
+      wordInput.type = 'number';
+      wordInput.min = 0;
+      wordInput.value = question.config.word_limit || '';
+      wordInput.addEventListener('input', () => {
+        question.config.word_limit = wordInput.value ? parseInt(wordInput.value, 10) : null;
+        scheduleQuestionSave(question);
+      });
+      wordLabel.appendChild(wordInput);
+      container.appendChild(wordLabel);
+
+      const charLabel = document.createElement('label');
+      charLabel.className = 'config-field';
+      charLabel.innerHTML = '<span>Character limit</span>';
+      const charInput = document.createElement('input');
+      charInput.type = 'number';
+      charInput.min = 0;
+      charInput.value = question.config.char_limit || '';
+      charInput.addEventListener('input', () => {
+        question.config.char_limit = charInput.value ? parseInt(charInput.value, 10) : null;
+        scheduleQuestionSave(question);
+      });
+      charLabel.appendChild(charInput);
+      container.appendChild(charLabel);
+    }
+  }
+
+  function createQuestionCard(question, index) {
+    question.uid = question.uid || Math.random().toString(36).slice(2);
+
+    const card = document.createElement('article');
+    card.className = 'forms-card question-card';
+    card.dataset.index = index;
+
+    const header = document.createElement('div');
+    header.className = 'question-header';
+
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'drag-handle';
+    dragHandle.textContent = '⠿';
+    dragHandle.draggable = true;
+    dragHandle.addEventListener('dragstart', (event) => {
+      card.classList.add('is-dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', index.toString());
+    });
+    dragHandle.addEventListener('dragend', () => {
+      card.classList.remove('is-dragging');
+    });
+    header.appendChild(dragHandle);
+
+    const questionInput = document.createElement('input');
+    questionInput.type = 'text';
+    questionInput.className = 'question-input';
+    questionInput.placeholder = 'Question';
+    questionInput.value = question.text || '';
+    questionInput.addEventListener('input', () => {
+      question.text = questionInput.value;
+      scheduleQuestionSave(question);
+    });
+    header.appendChild(questionInput);
+
+    const controls = document.createElement('div');
+    controls.className = 'question-controls';
+
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'question-type';
+    TYPE_OPTIONS.forEach(option => {
+      const opt = document.createElement('option');
+      opt.value = option.value;
+      opt.textContent = option.label;
+      typeSelect.appendChild(opt);
+    });
+    typeSelect.value = question.question_type;
+    typeSelect.addEventListener('change', () => {
+      question.question_type = typeSelect.value;
+      if (!questionDefaults[typeSelect.value]) {
+        question.options = [];
+        question.correct_answers = [];
+        question.config = {};
+      }
+      if (['multiple_choice', 'checkbox'].includes(typeSelect.value) && question.options.length === 0) {
+        question.options = [...questionDefaults[typeSelect.value].options];
+      }
+      renderOptionInputs(question, optionsContainer);
+      renderResponsePreview(question, responsePreview);
+      renderAdvancedConfig(question, advancedContainer);
+      scheduleQuestionSave(question);
+    });
+    controls.appendChild(typeSelect);
+
+    const pointsWrapper = document.createElement('label');
+    pointsWrapper.className = 'points-field';
+    pointsWrapper.innerHTML = '<span>Points</span>';
+    const pointsInput = document.createElement('input');
+    pointsInput.type = 'number';
+    pointsInput.min = '0';
+    pointsInput.step = '0.5';
+    pointsInput.value = question.points || 0;
+    pointsInput.addEventListener('input', () => {
+      question.points = parseFloat(pointsInput.value) || 0;
+      scheduleQuestionSave(question);
+    });
+    pointsWrapper.appendChild(pointsInput);
+    controls.appendChild(pointsWrapper);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'icon-btn';
+    deleteBtn.title = 'Delete question';
+    deleteBtn.innerHTML = '<span class="icon">🗑</span>';
+    deleteBtn.addEventListener('click', () => {
+      deleteQuestion(question).catch(() => {});
+    });
+    controls.appendChild(deleteBtn);
+
+    header.appendChild(controls);
+    card.appendChild(header);
+
+    const optionsContainer = document.createElement('div');
+    optionsContainer.className = 'options-container';
+    renderOptionInputs(question, optionsContainer);
+    card.appendChild(optionsContainer);
+
+    const responsePreview = document.createElement('div');
+    responsePreview.className = 'response-preview';
+    renderResponsePreview(question, responsePreview);
+    card.appendChild(responsePreview);
+
+    const advancedContainer = document.createElement('div');
+    advancedContainer.className = 'advanced-container';
+    renderAdvancedConfig(question, advancedContainer);
+    card.appendChild(advancedContainer);
+
+    const footer = document.createElement('div');
+    footer.className = 'question-footer';
+
+    const requiredLabel = document.createElement('label');
+    requiredLabel.className = 'switch';
+    requiredLabel.innerHTML = '<span>Required</span>';
+    const requiredInput = document.createElement('input');
+    requiredInput.type = 'checkbox';
+    requiredInput.checked = question.is_required;
+    requiredInput.addEventListener('change', () => {
+      question.is_required = requiredInput.checked;
+      scheduleQuestionSave(question);
+    });
+    const slider = document.createElement('span');
+    slider.className = 'toggle';
+    requiredLabel.appendChild(requiredInput);
+    requiredLabel.appendChild(slider);
+    footer.appendChild(requiredLabel);
+
+    card.appendChild(footer);
+    return card;
+  }
+
+  function renderQuestions() {
+    sortQuestions();
+    questionList.innerHTML = '';
+    state.questions.forEach((question, index) => {
+      question.order_index = index;
+      const card = createQuestionCard(question, index);
+      questionList.appendChild(card);
+    });
+  }
+
+  questionList.addEventListener('dragover', (event) => {
+    event.preventDefault();
+  });
+
+  questionList.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const originIndex = parseInt(event.dataTransfer.getData('text/plain'), 10);
+    const targetCard = event.target.closest('.question-card');
+    if (!targetCard && Number.isInteger(originIndex)) {
+      const [moved] = state.questions.splice(originIndex, 1);
+      state.questions.push(moved);
+      renderQuestions();
+      scheduleReorderSave();
+      return;
+    }
+    if (!targetCard) { return; }
+    const targetIndex = parseInt(targetCard.dataset.index, 10);
+    if (Number.isNaN(originIndex) || Number.isNaN(targetIndex) || originIndex === targetIndex) {
+      return;
+    }
+    const [moved] = state.questions.splice(originIndex, 1);
+    state.questions.splice(targetIndex, 0, moved);
+    renderQuestions();
+    scheduleReorderSave();
+  });
+
+  async function createQuestion(type = 'multiple_choice') {
+    try {
+      await ensureExamExists();
+      const template = cloneQuestionData(type);
+      const payload = buildQuestionPayload(template, state.questions.length);
+      const response = await fetch(`/admin/exams/${examId}/questions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error || !data.question) {
+        showToast(data && data.error ? data.error : 'Unable to add question.', 'error');
+        return;
+      }
+
+      const question = normalizeQuestion(data.question);
+      state.questions.push(question);
+      renderQuestions();
+    } catch (error) {
+      if (error.message !== 'exam-create-failed') {
+        showToast('Unable to add question.', 'error');
+      }
+    }
+  }
+
+  addQuestionBtn.addEventListener('click', () => {
+    createQuestion().catch(() => {});
+  });
+
+  function buildPayload(includeQuestions = true) {
+    const payload = { exam: buildExamSettings() };
+    if (includeQuestions) {
+      sortQuestions();
+      payload.questions = state.questions.map((question, index) => ({
+        id: question.id,
+        question_type: question.question_type,
+        text: question.text,
+        options: question.options,
+        correct_answers: question.correct_answers,
+        points: question.points,
+        is_required: question.is_required,
+        order_index: index,
+        config: question.config
+      }));
+    }
+    return payload;
+  }
+
+  async function saveExam() {
+    saveButton.disabled = true;
+    try {
+      await ensureExamExists();
+      const payload = buildPayload(false);
+      const response = await fetch(saveUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) {
+        showToast(data && data.error ? data.error : 'Failed to save exam.', 'error');
+        return;
+      }
+      showToast('Exam settings saved.', 'success');
+    } catch (error) {
+      if (error.message !== 'exam-create-failed') {
+        showToast('Unable to save exam. Check your connection.', 'error');
+      }
+    } finally {
+      saveButton.disabled = false;
+    }
+  }
+
+  async function previewExam() {
+    try {
+      await ensureExamExists();
+    } catch (error) {
+      if (error.message !== 'exam-create-failed') {
+        showToast('Unable to prepare preview.', 'error');
+      }
+      return;
+    }
+    if (!examId) {
+      showToast('Save the exam before previewing.', 'info');
+      return;
+    }
+    const courseId = courseSelect.value || '0';
+    const previewUrl = `/courses/${courseId}/exam/${examId}`;
+    window.open(previewUrl, '_blank');
+  }
+
+  saveButton.addEventListener('click', () => {
+    saveExam().catch(() => {});
+  });
+  previewButton.addEventListener('click', () => {
+    previewExam().catch(() => {});
+  });
+
+  function loadInitialData() {
+    populateCourses();
+    if (examData) {
+      titleInput.value = examData.title || '';
+      descInput.value = examData.description || '';
+      durationInput.value = examData.duration_minutes || 30;
+      passMarkInput.value = examData.pass_mark || 70;
+      requiredToggle.checked = Boolean(examData.is_required);
+      retakesToggle.checked = Boolean(examData.allow_retakes);
+      activeToggle.checked = examData.is_active !== false;
+      completionToggle.checked = Boolean(examData.required_to_complete_course);
+      const settings = examData.settings || {};
+      shuffleToggle.checked = Boolean(settings.shuffle_questions);
+      feedbackToggle.checked = settings.show_feedback !== undefined ? Boolean(settings.show_feedback) : true;
+      unlockToggle.checked = Boolean(settings.unlock_on_submission);
+      const gradingMode = settings.grading_mode || 'automatic';
+      gradingRadios.forEach(radio => {
+        radio.checked = radio.value === gradingMode;
+      });
+      if (examData.course_id) {
+        courseSelect.value = examData.course_id;
+        populateLessons(examData.course_id);
+      }
+      if (examData.trigger_lesson_id) {
+        triggerSelect.value = examData.trigger_lesson_id;
+      }
+      state.questions = (examData.questions || []).map(normalizeQuestion).filter(Boolean);
+    } else {
+      durationInput.value = durationInput.value || 30;
+      passMarkInput.value = passMarkInput.value || 70;
+      shuffleToggle.checked = false;
+      feedbackToggle.checked = true;
+      unlockToggle.checked = false;
+      gradingRadios.forEach(radio => {
+        radio.checked = radio.value === 'automatic';
+      });
+      state.questions = [];
+    }
+    renderQuestions();
+  }
+
+  loadInitialData();
+})();
+</script>
+
+<style>
+.forms-app {
+  min-height: calc(100vh - 60px);
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+.forms-bar {
+  background: linear-gradient(135deg, rgba(215, 169, 79, 0.95), rgba(45, 119, 133, 0.85));
+  border-radius: 18px;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 12px 25px rgba(0, 0, 0, 0.25);
+}
+.forms-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #0a0e1c;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.forms-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(7, 12, 28, 0.12);
+  border: 1px solid rgba(7, 12, 28, 0.2);
+}
+.forms-bar-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 12, 28, 0.16);
+  color: #0c152f;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.icon-btn:hover {
+  background: rgba(7, 12, 28, 0.22);
+}
+.icon-btn .icon {
+  pointer-events: none;
+}
+.forms-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  position: relative;
+}
+.forms-content {
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+  display: grid;
+  gap: 18px;
+}
+.forms-card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 8px 24px rgba(12, 20, 40, 0.12);
+  border: 1px solid rgba(15, 22, 38, 0.05);
+}
+.forms-card--title {
+  display: grid;
+  gap: 12px;
+}
+.forms-title-input {
+  border: none;
+  font-size: 2rem;
+  font-weight: 600;
+  padding: 0;
+  color: #17213f;
+}
+.forms-title-input:focus {
+  outline: none;
+}
+.forms-description-input {
+  border: none;
+  resize: vertical;
+  min-height: 60px;
+  color: #4b5679;
+  padding: 0;
+}
+.forms-description-input:focus {
+  outline: none;
+}
+.question-card {
+  display: grid;
+  gap: 16px;
+}
+.question-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.drag-handle {
+  cursor: grab;
+  color: #9da8c8;
+  padding: 4px 0;
+}
+.question-input {
+  flex: 1;
+  border: none;
+  border-bottom: 1px solid rgba(15, 22, 38, 0.12);
+  font-size: 1.05rem;
+  padding: 6px 0;
+  color: #1b2545;
+}
+.question-input:focus {
+  outline: none;
+  border-bottom-color: rgba(45, 119, 133, 0.6);
+}
+.question-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.question-type,
+.points-field input,
+.options-container input,
+.config-field input {
+  border: 1px solid rgba(15, 22, 38, 0.12);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(245, 246, 255, 0.8);
+  color: #1b2545;
+  min-width: 140px;
+}
+.points-field {
+  display: grid;
+  gap: 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7c86ad;
+}
+.options-container {
+  display: grid;
+  gap: 10px;
+}
+.options-container.is-empty {
+  display: none;
+}
+.option-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+}
+.option-marker {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(68, 81, 120, 0.3);
+}
+.option-marker--checkbox {
+  border-radius: 4px;
+}
+.option-input {
+  border: none;
+  border-bottom: 1px dashed rgba(15, 22, 38, 0.18);
+  padding: 6px 4px;
+}
+.option-input:focus {
+  outline: none;
+  border-bottom-color: rgba(45, 119, 133, 0.6);
+}
+.option-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #6f7aa2;
+}
+.option-control input {
+  transform: scale(1.2);
+}
+.option-delete {
+  border: none;
+  background: none;
+  color: #c86474;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.add-option {
+  border: none;
+  background: none;
+  color: #2d7785;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  justify-self: flex-start;
+}
+.response-preview {
+  display: grid;
+  gap: 8px;
+}
+.response-preview input,
+.response-preview textarea {
+  border: 1px solid rgba(15, 22, 38, 0.12);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(243, 245, 255, 0.6);
+  color: #7580a6;
+}
+.advanced-container {
+  display: grid;
+  gap: 12px;
+}
+.config-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #67729b;
+}
+.question-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: #5d698f;
+}
+.switch input {
+  display: none;
+}
+.switch .toggle {
+  width: 36px;
+  height: 20px;
+  border-radius: 12px;
+  background: rgba(118, 134, 180, 0.4);
+  position: relative;
+  transition: background 0.2s ease;
+}
+.switch .toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.2s ease;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+.switch input:checked + .toggle {
+  background: rgba(45, 119, 133, 0.8);
+}
+.switch input:checked + .toggle::after {
+  transform: translateX(16px);
+}
+.forms-sidebar {
+  position: sticky;
+  top: 110px;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding-right: 16px;
+}
+.fab {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, rgba(91, 124, 250, 0.15), rgba(45, 119, 133, 0.4));
+  color: #f2f5ff;
+  font-size: 1.2rem;
+  cursor: pointer;
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+.fab--floating {
+  position: fixed;
+  bottom: 32px;
+  right: 40px;
+  z-index: 160;
+}
+.fab:hover {
+  transform: translateY(-2px);
+}
+.settings-drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 12, 28, 0.65);
+  display: none;
+  align-items: center;
+  justify-content: flex-end;
+  z-index: 200;
+}
+.settings-drawer.is-visible {
+  display: flex;
+}
+.settings-card {
+  width: min(420px, 92%);
+  max-height: 92vh;
+  background: #f9f9fd;
+  border-radius: 18px;
+  margin-right: 24px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  box-shadow: 0 24px 40px rgba(0, 0, 0, 0.35);
+}
+.settings-header {
+  padding: 18px 22px;
+  background: linear-gradient(135deg, rgba(215, 169, 79, 0.85), rgba(45, 119, 133, 0.8));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #071020;
+}
+.settings-body {
+  padding: 18px 22px 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 20px;
+}
+.settings-group {
+  display: grid;
+  gap: 14px;
+}
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  color: #3f4666;
+}
+.radio-row input {
+  transform: scale(1.1);
+}
+.settings-hint {
+  margin: -6px 0 0 26px;
+  font-size: 0.8rem;
+  color: #7c86ad;
+}
+.settings-group h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5a668c;
+}
+.settings-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: #39405c;
+}
+.settings-field input,
+.settings-field select {
+  border-radius: 10px;
+  border: 1px solid rgba(15, 22, 38, 0.12);
+  padding: 8px 12px;
+  background: #ffffff;
+}
+.settings-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(241, 244, 255, 0.8);
+  color: #384367;
+}
+.settings-toggle input {
+  display: none;
+}
+.settings-toggle .toggle {
+  width: 40px;
+  height: 22px;
+  border-radius: 14px;
+  background: rgba(132, 148, 197, 0.45);
+  position: relative;
+  transition: background 0.2s ease;
+}
+.settings-toggle .toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.2s ease;
+}
+.settings-toggle input:checked + .toggle {
+  background: rgba(45, 119, 133, 0.85);
+}
+.settings-toggle input:checked + .toggle::after {
+  transform: translateX(18px);
+}
+.settings-footer {
+  padding: 16px 22px;
+  display: flex;
+  justify-content: flex-end;
+  background: #f1f3ff;
+}
+.btn.primary {
+  background: linear-gradient(135deg, #ffd27f, #f6a25a);
+  color: #11162b;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn.ghost {
+  border: none;
+  background: rgba(15, 22, 38, 0.08);
+  color: #1b2545;
+  border-radius: 12px;
+  padding: 10px 18px;
+  cursor: pointer;
+}
+.toast {
+  position: fixed;
+  bottom: 26px;
+  right: 26px;
+  background: rgba(9, 14, 30, 0.92);
+  border-radius: 14px;
+  padding: 14px 20px;
+  color: #f1f3ff;
+  box-shadow: 0 20px 36px rgba(0, 0, 0, 0.35);
+  z-index: 210;
+}
+.toast.success {
+  border: 1px solid rgba(110, 224, 148, 0.4);
+  color: #b9ffd5;
+}
+.toast.error {
+  border: 1px solid rgba(255, 142, 142, 0.45);
+  color: #ffd5d5;
+}
+.toast.info {
+  border: 1px solid rgba(133, 158, 255, 0.35);
+  color: #d8e1ff;
+}
+@media (max-width: 1024px) {
+  .forms-main {
+    grid-template-columns: 1fr;
+  }
+  .forms-sidebar {
+    position: fixed;
+    right: 16px;
+    top: auto;
+    bottom: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0;
+    gap: 14px;
+  }
+}
+@media (max-width: 720px) {
+  .forms-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .question-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .question-controls {
+    align-self: flex-end;
+  }
+}
+</style>
+{% endblock %}

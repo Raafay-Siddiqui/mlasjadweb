@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Admin Q&A{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="preload" href="{{ url_for('static', filename='css/admin.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-stack">
+    <header>
+      <h2 class="admin-page-title">⚙️ Manage Q&amp;A</h2>
+      <p class="admin-intro">Review user submissions, toggle visibility, and respond directly.</p>
+    </header>
+
+    <div class="admin-btn-row">
+      <a href="{{ url_for('admin_dashboard') }}" class="admin-btn admin-btn--ghost admin-btn--small">⬅ Back to Admin Dashboard</a>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="admin-alert">
+          <ul>
+            {% for message in messages %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% for q in questions %}
+      <div class="admin-card">
+        <div class="admin-qa-header">
+          <div>
+            <h3>{{ q.title }}</h3>
+            <p class="admin-qa-flair">
+              {% if q.is_public %}
+                Public question
+              {% else %}
+                Private question
+              {% endif %}
+              · {{ q.user.full_name or 'Unknown' }} (User ID {{ q.user_id }})
+            </p>
+          </div>
+          <div class="admin-btn-row admin-btn-row--tight">
+            <form action="{{ url_for('toggle_question', question_id=q.id) }}" method="POST">
+              <button type="submit" class="admin-btn admin-btn--ghost admin-btn--small">
+                {% if q.is_public %}Make Private{% else %}Make Public{% endif %}
+              </button>
+            </form>
+            <form action="{{ url_for('delete_question', question_id=q.id) }}" method="POST" onsubmit="return confirm('Delete this question and all its messages?');">
+              <button type="submit" class="admin-btn admin-btn--danger admin-btn--small">🗑 Delete</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="admin-message-box">
+          {% for msg in q.messages %}
+            <div class="admin-message">
+              <strong class="sender {% if msg.sender == 'admin' %}is-admin{% else %}is-user{% endif %}">{{ msg.sender.capitalize() }}</strong>
+              <span>{{ msg.body }}</span>
+              <span class="admin-qa-flair">{{ msg.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+              <form action="{{ url_for('delete_message', message_id=msg.id) }}" method="POST" onsubmit="return confirm('Delete this message?');">
+                <button type="submit" class="admin-btn admin-btn--danger admin-btn--small">×</button>
+              </form>
+            </div>
+          {% else %}
+            <p class="admin-note">No messages yet.</p>
+          {% endfor %}
+        </div>
+
+        <form action="{{ url_for('admin_reply', question_id=q.id) }}" method="POST" class="admin-reply-form">
+          <textarea name="body" placeholder="Type your reply…" required></textarea>
+          <button type="submit" class="admin-btn admin-btn--primary">Reply</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="admin-intro">No questions have been submitted yet.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

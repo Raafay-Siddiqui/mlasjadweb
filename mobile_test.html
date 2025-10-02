@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Test - Al-Baqi Academy</title>
+    <style>
+        /* Simulate mobile viewport */
+        body {
+            max-width: 375px;
+            margin: 0 auto;
+            border: 2px solid #ccc;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        iframe {
+            width: 100%;
+            height: 800px;
+            border: none;
+        }
+        .test-info {
+            background: #f0f0f0;
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+            border-bottom: 1px solid #ccc;
+        }
+        .instructions {
+            background: #e8f4fd;
+            padding: 8px;
+            font-size: 12px;
+            text-align: center;
+            border-bottom: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-info">
+        📱 Mobile Simulation (375px width)
+    </div>
+    <div class="instructions">
+        Testing: Brand at top, hamburger menu below
+    </div>
+    <iframe src="http://localhost:5005" title="Mobile Test" loading="lazy"></iframe>
+</body>
+</html>

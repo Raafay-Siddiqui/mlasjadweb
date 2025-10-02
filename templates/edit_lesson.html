@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Edit Lesson & Course{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="preload" href="{{ url_for('static', filename='css/admin.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-stack">
+    <header>
+      <h2 class="admin-page-title">✏️ Edit – {{ lesson.course.name|capitalize }} (Year {{ lesson.course.year }})</h2>
+      <p class="admin-intro">Update the course overview or replace lesson-specific files.</p>
+    </header>
+
+    <div class="admin-card">
+      <h3>📚 Edit Course Details</h3>
+      <form method="POST" enctype="multipart/form-data" action="{{ url_for('edit_course', course_id=lesson.course.id) }}" class="admin-form">
+        <label>
+          <span>Course Name</span>
+          <input type="text" name="name" value="{{ lesson.course.name }}" required>
+        </label>
+        <label>
+          <span>Year</span>
+          <select name="year">
+            <option value="1" {% if lesson.course.year == 1 %}selected{% endif %}>Year 1</option>
+            <option value="2" {% if lesson.course.year == 2 %}selected{% endif %}>Year 2</option>
+          </select>
+        </label>
+        <label>
+          <span>Description</span>
+          <textarea name="description" rows="3">{{ lesson.course.description }}</textarea>
+        </label>
+        <div class="admin-btn-row">
+          <button type="submit" class="admin-btn admin-btn--primary">💾 Save Course</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="admin-card">
+      <h3>📖 Edit Lesson Details</h3>
+      <form method="POST" enctype="multipart/form-data" class="admin-form">
+        <label>
+          <span>Week</span>
+          <input type="number" name="week" value="{{ lesson.week }}" required>
+        </label>
+        <label>
+          <span>Lesson Title</span>
+          <input type="text" name="title" value="{{ lesson.title }}" required>
+        </label>
+        <label>
+          <span>Replace Video (optional)</span>
+          <input type="file" name="video_file" accept=".mp4,.mov,.avi">
+        </label>
+        <label>
+          <span>Replace Slides (optional)</span>
+          <input type="file" name="ppt_file" accept=".ppt,.pptx,.pdf">
+        </label>
+        <div class="admin-btn-row">
+          <button type="submit" class="admin-btn admin-btn--primary">💾 Save Lesson</button>
+          <a href="{{ url_for('manage_courses') }}" class="admin-btn admin-btn--ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    {% set quiz_ns = namespace(lines=[]) %}
+    {% for quiz in lesson.quizzes %}
+      {% set line = (
+        quiz.question|replace(',', ';') ~ ',' ~
+        quiz.option_a|replace(',', ';') ~ ',' ~
+        quiz.option_b|replace(',', ';') ~ ',' ~
+        quiz.option_c|replace(',', ';') ~ ',' ~
+        ({'A':'1','B':'2','C':'3'}[quiz.correct_answer] if quiz.correct_answer in ['A','B','C'] else '1')
+      ) %}
+      {% set quiz_ns.lines = quiz_ns.lines + [line] %}
+    {% endfor %}
+
+    <div class="admin-card">
+      <h3>📝 Edit Quiz Questions</h3>
+      <p class="admin-note">Format: <code>Question,OptionA,OptionB,OptionC,CorrectOptionNumber</code>. Use <strong>1</strong>, <strong>2</strong>, or <strong>3</strong> for the correct option.</p>
+      <form method="POST" action="{{ url_for('update_lesson_quiz', lesson_id=lesson.id) }}" class="admin-form">
+        <label class="full-span">
+          <span>Quiz Items</span>
+          <textarea name="quiz_data" rows="{{ lesson.quizzes|length > 0 and lesson.quizzes|length * 3 or 4 }}">{{ quiz_ns.lines|join('\n') }}</textarea>
+        </label>
+        <div class="admin-btn-row">
+          <button type="submit" class="admin-btn admin-btn--primary">💾 Save Quiz</button>
+          <a href="{{ url_for('manage_courses') }}" class="admin-btn admin-btn--ghost">Back</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

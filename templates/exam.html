@@ -1,0 +1,1080 @@
+{% extends "base.html" %}
+{% block title %}{{ exam.title }}{% endblock %}
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<div class="exam-shell" id="exam-app"
+     data-exam='{{ exam_payload|tojson }}'
+     data-start-url="{{ url_for('start_exam', course_id=course.id if course else 0, exam_id=exam.id) }}"
+     data-autosave-url="{{ url_for('autosave_exam', course_id=course.id if course else 0, exam_id=exam.id) }}"
+     data-submit-url="{{ url_for('submit_exam', course_id=course.id if course else 0, exam_id=exam.id) }}"
+     data-status-url="{{ url_for('exam_status', course_id=course.id if course else 0, exam_id=exam.id) }}"
+     data-results-base="{{ url_for('exam_results', course_id=course.id if course else 0, exam_id=exam.id, attempt_id=0)[:-1] }}"
+     data-active-attempt-id="{{ active_attempt_id or '' }}"
+     data-active-time-remaining="{{ active_time_remaining or '' }}">
+  <header class="exam-header">
+    <div>
+      <h1 class="exam-title">📝 {{ exam.title }}</h1>
+      {% if exam.description %}
+      <p class="exam-description">{{ exam.description }}</p>
+      {% endif %}
+      <div class="exam-meta">
+        {% if course %}
+          <span class="chip">Course: {{ course.name|capitalize }} (Year {{ course.year }})</span>
+        {% endif %}
+        <span class="chip">Duration: {{ exam.duration_minutes }} minutes</span>
+        <span class="chip">Pass Mark: {{ '%0.0f'|format(exam.pass_mark) }}%</span>
+        {% if exam.is_required %}
+          <span class="chip required">Required Exam</span>
+        {% else %}
+          <span class="chip optional">Optional</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="exam-countdown" id="exam-countdown">
+      <div class="label">Time Remaining</div>
+      <div class="value" id="exam-countdown-value">--:--</div>
+    </div>
+  </header>
+
+  <section id="exam-status-banner" class="exam-status-banner" hidden></section>
+
+  <div class="exam-body">
+    <div class="exam-question-list" id="exam-question-list">
+      <div class="exam-placeholder" id="exam-placeholder">
+        <p>This exam has {{ exam.questions|length }} question{{ exam.questions|length != 1 and 's' or '' }}.</p>
+        <p>Start the exam to reveal the questions and begin the timer.</p>
+      </div>
+    </div>
+    <aside class="exam-sidebar">
+      <div class="sidebar-card">
+        <h3>Exam Progress</h3>
+        <p id="exam-progress">0 / {{ exam.questions|length }} answered</p>
+        <div class="progress-bar"><span id="exam-progress-bar"></span></div>
+        <button class="btn primary" id="submit-exam" disabled>Submit Exam</button>
+        <button class="btn ghost" id="save-exam" disabled>Save Progress</button>
+        <small class="sidebar-note">Answers auto-save every minute.</small>
+      </div>
+      <div class="sidebar-card attempts">
+        <h3>Previous Attempts</h3>
+        {% if past_attempts %}
+        <ul>
+          {% for attempt in past_attempts %}
+          <li>
+            <strong>#{{ attempt.attempt_id }}</strong>
+            <div>{{ attempt.start_time and attempt.start_time.split('T')[0] or '—' }}</div>
+            <div>
+              Score: {% if attempt.max_score %}{{ '%.1f'|format(attempt.score) }} / {{ '%.1f'|format(attempt.max_score) }} ({{ attempt.percentage }}%)
+              {% else %}Pending{% endif %}
+            </div>
+            <div>Status: {{ attempt.status|replace('_',' ')|title }}</div>
+            {% if attempt.passed is true %}<div class="chip passed">Passed</div>{% elif attempt.passed is false %}<div class="chip failed">Failed</div>{% endif %}
+            <a class="link" href="{{ url_for('exam_results', course_id=course.id if course else 0, exam_id=exam.id, attempt_id=attempt.attempt_id) }}">View details</a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p>No completed attempts yet.</p>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+
+  <section id="exam-feedback" class="exam-feedback" hidden></section>
+</div>
+
+<div class="exam-disclaimer-modal" id="exam-disclaimer">
+  <div class="disclaimer-backdrop"></div>
+  <div class="disclaimer-card">
+    <h2>🚨 Exam Rules & Integrity Agreement</h2>
+    <p>Please read carefully before starting.</p>
+    <ul>
+      <li>Once you start the exam, the timer runs continuously and cannot be paused.</li>
+      <li>Do not refresh, close, or navigate away to gain additional time.</li>
+      <li>The exam auto-submits exactly when the timer expires.</li>
+      <li>Cheating, copying, or sharing questions is strictly forbidden.</li>
+      <li>Your progress and activity are monitored for compliance.</li>
+    </ul>
+    <label class="agree-check">
+      <input type="checkbox" id="disclaimer-agree"> <span>I agree to the exam rules.</span>
+    </label>
+    <div class="disclaimer-actions">
+      <button class="btn primary" id="start-exam-btn" disabled>Start Exam</button>
+      <p class="timer-note">Timer starts immediately after clicking Start Exam.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const examApp = document.getElementById('exam-app');
+  if (!examApp) { return; }
+
+  const examData = JSON.parse(examApp.dataset.exam || '{}');
+  const startUrl = examApp.dataset.startUrl;
+  const autosaveUrl = examApp.dataset.autosaveUrl;
+  const submitUrl = examApp.dataset.submitUrl;
+  const statusUrl = examApp.dataset.statusUrl;
+  const resultsBase = examApp.dataset.resultsBase;
+  const activeAttemptId = examApp.dataset.activeAttemptId || null;
+  const presetRemaining = parseInt(examApp.dataset.activeTimeRemaining || '0', 10);
+
+  const sidebarSubmitBtn = document.getElementById('submit-exam');
+  const saveBtn = document.getElementById('save-exam');
+  const countdownValue = document.getElementById('exam-countdown-value');
+  const questionList = document.getElementById('exam-question-list');
+  const placeholder = document.getElementById('exam-placeholder');
+  const progressLabel = document.getElementById('exam-progress');
+  const progressBar = document.getElementById('exam-progress-bar');
+  const feedbackSection = document.getElementById('exam-feedback');
+  const statusBanner = document.getElementById('exam-status-banner');
+
+  const modal = document.getElementById('exam-disclaimer');
+  const agreeCheck = document.getElementById('disclaimer-agree');
+  const startBtn = document.getElementById('start-exam-btn');
+
+  let attemptId = null;
+  let autosaveTimer = null;
+  let countdownTimer = null;
+  let timeRemaining = 0;
+  let responses = {};
+  let examStarted = false;
+
+  function formatTime(seconds) {
+    const mins = Math.max(0, Math.floor(seconds / 60));
+    const secs = Math.max(0, seconds % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  function escapeHtml(value) {
+    return (value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function parseQuestionText(rawText) {
+    const lines = (rawText || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+    const [mainLine, ...rest] = lines.length ? lines : ['Untitled question'];
+    return {
+      main: mainLine,
+      subs: rest
+    };
+  }
+
+  function questionAnswered(question) {
+    const value = responses[question.id];
+    if (!value) { return false; }
+    if (['multiple_choice', 'mcq', 'radio'].includes(question.type)) {
+      return Boolean(value.selected);
+    }
+    if (['checkbox', 'multi_select'].includes(question.type)) {
+      return Array.isArray(value.selected) && value.selected.length > 0;
+    }
+    if (value.text) {
+      return value.text.trim().length > 0;
+    }
+    return false;
+  }
+
+  function updateProgressDisplay() {
+    const total = examData.questions ? examData.questions.length : 0;
+    const answered = examData.questions ? examData.questions.filter(questionAnswered).length : 0;
+    progressLabel.textContent = `${answered} / ${total} answered`;
+    if (progressBar) {
+      const percent = total ? (answered / total) * 100 : 0;
+      progressBar.style.width = `${percent}%`;
+    }
+    sidebarSubmitBtn.disabled = !examStarted || answered === 0;
+    saveBtn.disabled = !examStarted;
+  }
+
+  function renderQuestions(prefill) {
+    if (!examData.questions) { return; }
+    questionList.innerHTML = '';
+
+    examData.questions.forEach((question, index) => {
+      const card = document.createElement('article');
+      card.className = 'exam-question-card';
+      card.dataset.questionId = question.id;
+
+      const header = document.createElement('header');
+      header.className = 'question-header';
+
+      const titleWrap = document.createElement('div');
+      titleWrap.className = 'question-title';
+
+      const numberSpan = document.createElement('span');
+      numberSpan.className = 'number';
+      numberSpan.textContent = `Q${index + 1}`;
+      titleWrap.appendChild(numberSpan);
+
+      const { main, subs } = parseQuestionText(question.text);
+      const mainSpan = document.createElement('span');
+      mainSpan.className = 'question-main';
+      mainSpan.textContent = main;
+      titleWrap.appendChild(mainSpan);
+
+      header.appendChild(titleWrap);
+
+      if (question.required) {
+        const requiredTag = document.createElement('span');
+        requiredTag.className = 'required-tag';
+        requiredTag.textContent = 'Required';
+        header.appendChild(requiredTag);
+      }
+
+      card.appendChild(header);
+
+      if (subs.length) {
+        const subBlock = document.createElement('div');
+        subBlock.className = 'question-subtext';
+        subs.forEach(line => {
+          const p = document.createElement('p');
+          p.textContent = line;
+          subBlock.appendChild(p);
+        });
+        card.appendChild(subBlock);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'question-body';
+
+      const existing = prefill && prefill[question.id] ? prefill[question.id] : null;
+
+      if (['multiple_choice', 'mcq', 'radio'].includes(question.type)) {
+        // Fix for character-by-character issue - ensure options is an array
+        let options = question.options || [];
+        if (typeof options === 'string') {
+          // If options is a string, try to parse it or split it appropriately
+          try {
+            options = JSON.parse(options);
+          } catch (e) {
+            // If JSON parse fails, treat as single option
+            options = [options];
+          }
+        }
+        if (!Array.isArray(options)) {
+          options = [String(options)];
+        }
+        options.forEach((option, optIndex) => {
+          const id = `q${question.id}-${optIndex}`;
+          const label = document.createElement('label');
+          label.className = 'answer-option';
+          const input = document.createElement('input');
+          input.type = 'radio';
+          input.name = `question-${question.id}`;
+          input.value = option;
+          input.id = id;
+          if (existing && existing.selected === option) {
+            input.checked = true;
+          }
+          input.addEventListener('change', () => {
+            responses[question.id] = { selected: input.value };
+            updateProgressDisplay();
+            scheduleAutosave();
+          });
+          const span = document.createElement('span');
+          span.textContent = option;
+          label.appendChild(input);
+          label.appendChild(span);
+          body.appendChild(label);
+        });
+      } else if (['checkbox', 'multi_select'].includes(question.type)) {
+        // Fix for character-by-character issue - ensure options is an array
+        let options = question.options || [];
+        if (typeof options === 'string') {
+          try {
+            options = JSON.parse(options);
+          } catch (e) {
+            options = [options];
+          }
+        }
+        if (!Array.isArray(options)) {
+          options = [String(options)];
+        }
+        const selectedValues = existing && existing.selected ? new Set(existing.selected) : new Set();
+        options.forEach((option, optIndex) => {
+          const id = `q${question.id}-${optIndex}`;
+          const label = document.createElement('label');
+          label.className = 'answer-option';
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.value = option;
+          input.id = id;
+          if (selectedValues.has(option)) {
+            input.checked = true;
+          }
+          input.addEventListener('change', () => {
+            const current = responses[question.id] && responses[question.id].selected ? new Set(responses[question.id].selected) : new Set();
+            if (input.checked) {
+              current.add(option);
+            } else {
+              current.delete(option);
+            }
+            responses[question.id] = { selected: Array.from(current) };
+            updateProgressDisplay();
+            scheduleAutosave();
+          });
+          const span = document.createElement('span');
+          span.textContent = option;
+          label.appendChild(input);
+          label.appendChild(span);
+          body.appendChild(label);
+        });
+      } else if (question.type === 'short_answer') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Type your answer';
+        if (existing && existing.text) {
+          input.value = existing.text;
+        }
+        input.addEventListener('input', () => {
+          responses[question.id] = { text: input.value.trim() };
+          updateProgressDisplay();
+          scheduleAutosave();
+        });
+        body.appendChild(input);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.rows = 6;
+        textarea.placeholder = 'Provide your response';
+        if (question.config && question.config.word_limit) {
+          textarea.maxLength = question.config.word_limit * 6; // approximate characters
+        }
+        if (existing && existing.text) {
+          textarea.value = existing.text;
+        }
+        textarea.addEventListener('input', () => {
+          responses[question.id] = { text: textarea.value.trim() };
+          updateProgressDisplay();
+          scheduleAutosave();
+        });
+        body.appendChild(textarea);
+        if (question.config && (question.config.word_limit || question.config.char_limit)) {
+          const limit = document.createElement('small');
+          const limitText = [];
+          if (question.config.word_limit) { limitText.push(`${question.config.word_limit} word limit`); }
+          if (question.config.char_limit) { limitText.push(`${question.config.char_limit} character limit`); }
+          limit.textContent = limitText.join(' • ');
+          limit.className = 'limit-note';
+          body.appendChild(limit);
+        }
+      }
+
+      card.appendChild(body);
+      questionList.appendChild(card);
+    });
+  }
+
+  function closeModal() {
+    if (modal) {
+      modal.classList.remove('is-visible');
+    }
+  }
+
+  function openModal() {
+    if (modal) {
+      modal.classList.add('is-visible');
+    }
+  }
+
+  function startCountdown(initialSeconds) {
+    timeRemaining = initialSeconds;
+    if (countdownTimer) {
+      window.clearInterval(countdownTimer);
+    }
+    countdownValue.textContent = formatTime(timeRemaining);
+    countdownTimer = window.setInterval(() => {
+      timeRemaining -= 1;
+      if (timeRemaining <= 0) {
+        timeRemaining = 0;
+        countdownValue.textContent = '00:00';
+        window.clearInterval(countdownTimer);
+        statusBanner.hidden = false;
+        statusBanner.textContent = '⏰ Time is up. Submitting your exam…';
+        submitExam(true);
+      } else {
+        countdownValue.textContent = formatTime(timeRemaining);
+      }
+    }, 1000);
+  }
+
+  function scheduleAutosave() {
+    if (!attemptId || !autosaveUrl) { return; }
+    if (autosaveTimer) {
+      window.clearTimeout(autosaveTimer);
+    }
+    autosaveTimer = window.setTimeout(() => {
+      saveProgress();
+    }, 5000);
+  }
+
+  function saveProgress(manual) {
+    if (!attemptId) { return; }
+    const payload = {
+      attempt_id: attemptId,
+      responses: responses
+    };
+    fetch(autosaveUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    })
+      .then(resp => resp.json())
+      .then(data => {
+        if (!data || data.error) {
+          if (manual) {
+            alert(data && data.error ? data.error : 'Unable to save progress.');
+          }
+          return;
+        }
+        if (manual) {
+          statusBanner.hidden = false;
+          statusBanner.textContent = '✅ Progress saved.';
+          window.setTimeout(() => { statusBanner.hidden = true; }, 4000);
+        }
+      })
+      .catch(() => {
+        if (manual) {
+          alert('Unable to save progress. Please try again.');
+        }
+      });
+  }
+
+  function buildResponsePayload() {
+    return Object.entries(responses).map(([questionId, value]) => ({
+      question_id: Number(questionId),
+      response: value
+    }));
+  }
+
+  function displayFeedback(summary) {
+    if (!summary) { return; }
+    feedbackSection.hidden = false;
+    const percent = summary.percentage !== null && summary.percentage !== undefined ? summary.percentage : null;
+    const passed = summary.passed;
+    const requiresManual = summary.requires_manual_grading;
+    const statusText = requiresManual ? 'Awaiting manual grading' : (passed ? 'Passed' : 'Failed');
+    const icon = requiresManual ? '🕒' : (passed ? '🎉' : '📋');
+
+    let html = `<div class="feedback-card ${passed ? 'passed' : 'failed'}">` +
+      `<h2>${icon} ${statusText}</h2>` +
+      `<p>Score: ${summary.score ?? 0} / ${summary.max_score ?? 0}`;
+    if (percent !== null) {
+      html += ` (${percent}%)`;
+    }
+    html += '</p>';
+    if (requiresManual) {
+      html += '<p>Your written answers will be graded by an instructor soon.</p>';
+    }
+    if (summary.overall_feedback) {
+      html += `<div class="overall-feedback"><strong>Instructor Feedback:</strong><p>${summary.overall_feedback}</p></div>`;
+    }
+    html += `<a class="btn ghost" href="${resultsBase}${summary.attempt_id}">View detailed results</a>`;
+    html += '</div>';
+
+    feedbackSection.innerHTML = html;
+  }
+
+  function disableExamForm() {
+    examStarted = false;
+    if (questionList) {
+      questionList.querySelectorAll('input, textarea, button').forEach(el => {
+        el.disabled = true;
+      });
+    }
+    sidebarSubmitBtn.disabled = true;
+    saveBtn.disabled = true;
+  }
+
+  function submitExam(autoTriggered) {
+    if (!attemptId || !submitUrl) { return; }
+    disableExamForm();
+    const payload = {
+      attempt_id: attemptId,
+      responses: buildResponsePayload()
+    };
+
+    fetch(submitUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    })
+      .then(resp => resp.json())
+      .then(data => {
+        if (!data || data.error) {
+          const message = data && data.error ? data.error : 'Submission failed. Redirecting to status page…';
+          alert(message);
+          window.location.reload();
+          return;
+        }
+        if (countdownTimer) {
+          window.clearInterval(countdownTimer);
+        }
+        statusBanner.hidden = false;
+        statusBanner.textContent = autoTriggered ? '⏰ Exam submitted automatically.' : '✅ Exam submitted.';
+        displayFeedback(data.attempt);
+      })
+      .catch(() => {
+        alert('Submission failed. Please refresh the page.');
+      });
+  }
+
+  function initializeExamView(prefillResponses, remaining) {
+    examStarted = true;
+    responses = prefillResponses || {};
+    renderQuestions(responses);
+    updateProgressDisplay();
+    if (placeholder) {
+      placeholder.remove();
+    }
+    sidebarSubmitBtn.disabled = false;
+    saveBtn.disabled = false;
+    closeModal();
+    startCountdown(remaining);
+  }
+
+  function startExam() {
+    statusBanner.hidden = true;
+    fetch(startUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin'
+    })
+      .then(resp => resp.json())
+      .then(data => {
+        if (!data || data.error) {
+          alert(data && data.error ? data.error : 'Unable to start exam.');
+          return;
+        }
+        attemptId = data.attempt_id;
+        initializeExamView(data.autosave_payload || {}, data.time_remaining_seconds || (examData.duration_minutes * 60));
+      })
+      .catch(() => {
+        alert('Unable to start exam. Please try again.');
+      });
+  }
+
+  // Event bindings
+  if (agreeCheck && startBtn) {
+    agreeCheck.addEventListener('change', () => {
+      startBtn.disabled = !agreeCheck.checked;
+    });
+    startBtn.addEventListener('click', startExam);
+  }
+
+  if (sidebarSubmitBtn) {
+    sidebarSubmitBtn.addEventListener('click', () => {
+      if (confirm('Submit exam now? You will not be able to change your answers.')) {
+        submitExam(false);
+      }
+    });
+  }
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      saveProgress(true);
+    });
+  }
+
+  if (activeAttemptId) {
+    // Resume existing attempt immediately.
+    startBtn.textContent = 'Resume Exam';
+    startBtn.disabled = false;
+    agreeCheck.checked = true;
+    closeModal();
+    startExam();
+  } else {
+    openModal();
+  }
+})();
+</script>
+
+<style>
+.exam-shell {
+  max-width: 1100px;
+  margin: 40px auto;
+  padding: 24px;
+  background: rgba(14, 20, 42, 0.92);
+  border-radius: 20px;
+  box-shadow: 0 24px 40px rgba(0,0,0,0.45);
+}
+.exam-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 30px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding-bottom: 18px;
+  margin-bottom: 24px;
+}
+.exam-title {
+  margin: 0 0 10px;
+}
+.exam-description {
+  color: #c7d4ff;
+  margin: 0 0 12px;
+}
+.exam-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.exam-countdown {
+  background: rgba(10, 18, 40, 0.8);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 14px 18px;
+  text-align: right;
+  min-width: 130px;
+  box-shadow: inset 0 0 12px rgba(0,0,0,0.3);
+}
+.exam-countdown .label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #99a6d6;
+}
+.exam-countdown .value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #ffcf6d;
+}
+.exam-body {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 30px;
+  align-items: start;
+}
+.exam-question-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  width: 100%;
+}
+.exam-question-card {
+  background: rgba(9, 15, 32, 0.9);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 16px;
+  padding: 20px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+.question-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+.question-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.question-title .number {
+  background: rgba(255,255,255,0.1);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.question-main {
+  font-weight: 600;
+  color: #f2f5ff;
+  word-wrap: break-word;
+  hyphens: auto;
+  line-height: 1.4;
+  flex: 1;
+  min-width: 0;
+}
+.question-subtext {
+  margin-bottom: 12px;
+  color: #9fb1ff;
+  display: grid;
+  gap: 4px;
+}
+.question-subtext p {
+  margin: 0;
+}
+.required-tag {
+  font-size: 0.75rem;
+  background: rgba(255, 100, 120, 0.16);
+  color: #ff9cae;
+  border-radius: 12px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.answer-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  padding: 12px 15px;
+  width: 100%;
+  cursor: pointer;
+  min-width: 0;
+}
+.answer-option input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  transform: scale(1.1);
+  margin: 0;
+}
+.answer-option span {
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  line-height: 1.5;
+}
+.question-body input[type="text"],
+.question-body textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(6,11,28,0.9);
+  color: #fff;
+  font-size: 1rem;
+}
+.question-body textarea {
+  min-height: 140px;
+}
+.limit-note {
+  display: block;
+  color: #95a3d7;
+  margin-top: 6px;
+}
+.exam-placeholder {
+  padding: 60px 20px;
+  text-align: center;
+  border: 1px dashed rgba(255,255,255,0.15);
+  border-radius: 16px;
+}
+.exam-sidebar {
+  display: grid;
+  gap: 18px;
+}
+.sidebar-card {
+  background: rgba(9, 15, 32, 0.92);
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 18px;
+}
+.sidebar-card.attempts ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.sidebar-card.attempts li {
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+.exam-feedback {
+  margin-top: 24px;
+}
+.feedback-card {
+  background: rgba(10, 16, 33, 0.9);
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 20px;
+}
+.feedback-card.passed {
+  border-color: rgba(98, 232, 120, 0.45);
+}
+.feedback-card.failed {
+  border-color: rgba(255, 146, 146, 0.35);
+}
+.overall-feedback {
+  margin-top: 14px;
+  padding: 12px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 12px;
+}
+.progress-bar {
+  margin: 12px 0 18px;
+  width: 100%;
+  height: 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.progress-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(135deg, #6be5f8, #5072ff);
+  width: 0%;
+}
+.exam-status-banner {
+  background: rgba(81, 124, 255, 0.15);
+  border: 1px solid rgba(81, 124, 255, 0.4);
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  color: #cdd8ff;
+}
+
+.chip {
+  background: rgba(255,255,255,0.08);
+  color: #d7e1ff;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+.chip.required {
+  background: rgba(255, 195, 125, 0.2);
+  color: #ffdba6;
+}
+.chip.optional {
+  background: rgba(110, 224, 163, 0.18);
+  color: #adffd4;
+}
+.chip.passed { background: rgba(95, 205, 133, 0.2); color: #7dffb4; }
+.chip.failed { background: rgba(255, 138, 138, 0.2); color: #ffc2c2; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn.primary {
+  background: linear-gradient(135deg, #ffd27f, #f6a25a);
+  color: #141423;
+}
+.btn.ghost {
+  background: rgba(255,255,255,0.12);
+  color: #f8f7ff;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.exam-disclaimer-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.exam-disclaimer-modal.is-visible {
+  display: flex;
+}
+.disclaimer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(7, 11, 22, 0.82);
+}
+.disclaimer-card {
+  position: relative;
+  z-index: 1;
+  width: min(92%, 520px);
+  background: rgba(13, 18, 36, 0.95);
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 26px;
+  box-shadow: 0 28px 42px rgba(0,0,0,0.5);
+  display: grid;
+  gap: 16px;
+}
+.disclaimer-card ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #d3ddff;
+  display: grid;
+  gap: 10px;
+}
+.agree-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.agree-check input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+.agree-check span {
+  flex: 1;
+  line-height: 1.4;
+}
+.disclaimer-actions {
+  display: grid;
+  gap: 8px;
+}
+.timer-note {
+  font-size: 0.8rem;
+  color: #9aacff;
+  margin: 0;
+}
+.sidebar-note {
+  font-size: 0.75rem;
+  color: #8fa0d8;
+}
+.link {
+  color: #7eb5ff;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 1200px) {
+  .exam-shell {
+    max-width: 95%;
+    margin: 20px auto;
+  }
+  .exam-body {
+    grid-template-columns: 1fr 280px;
+    gap: 25px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .exam-body {
+    grid-template-columns: 1fr;
+    gap: 25px;
+  }
+  .exam-sidebar {
+    order: -1;
+  }
+  .sidebar-card.attempts {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .exam-shell {
+    margin: 15px auto;
+    padding: 16px;
+  }
+  .exam-header {
+    flex-direction: column;
+    gap: 15px;
+  }
+  .question-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .required-tag {
+    align-self: flex-start;
+  }
+  .exam-question-card {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .exam-shell {
+    margin: 10px;
+    padding: 12px;
+  }
+  .question-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .question-main {
+    font-size: 1rem;
+  }
+  .answer-option {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .answer-option input {
+    width: 16px;
+    height: 16px;
+  }
+  .disclaimer-card {
+    width: 96%;
+    padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .exam-shell {
+    margin: 5px;
+    padding: 10px;
+  }
+  .question-header {
+    gap: 8px;
+  }
+  .question-title .number {
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+  }
+  .question-main {
+    font-size: 0.95rem;
+  }
+  .answer-option {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .answer-option input {
+    width: 14px;
+    height: 14px;
+  }
+  .disclaimer-card {
+    padding: 16px;
+  }
+  .disclaimer-card h2 {
+    font-size: 1.1rem;
+  }
+}
+
+</style>
+
+{% endblock %}

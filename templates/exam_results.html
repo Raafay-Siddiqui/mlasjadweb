@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}{{ exam.title }} Results{% endblock %}
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+{% macro render_question_lines(text) %}
+  {% set ns = namespace(lines=[]) %}
+  {% for raw in (text or '').split('\n') %}
+    {% set trimmed = raw.strip() %}
+    {% if trimmed %}
+      {% set ns.lines = ns.lines + [trimmed] %}
+    {% endif %}
+  {% endfor %}
+  {% if ns.lines %}
+    <div class="question-lines">
+      <p class="question-main">{{ ns.lines[0] }}</p>
+      {% for line in ns.lines[1:] %}
+        <p class="question-sub">{{ line }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
+<div class="exam-results-shell">
+  <header class="results-header">
+    <div>
+      <h1>{{ exam.title }} – Attempt #{{ attempt.attempt_number }}</h1>
+      {% if course %}
+      <p>Course: {{ course.name|capitalize }} (Year {{ course.year }})</p>
+      {% endif %}
+      <p>Taken: {{ attempt.start_time.strftime('%Y-%m-%d %H:%M') if attempt.start_time else 'Unknown' }}</p>
+    </div>
+    <div class="results-summary-chip {{ 'pass' if summary.passed else 'fail' if summary.passed is not none else 'pending' }}">
+      {% if summary.requires_manual_grading %}
+        Awaiting Manual Review
+      {% elif summary.passed %}
+        Passed 🎉
+      {% elif summary.passed is not none %}
+        Not Passed
+      {% else %}
+        Submitted
+      {% endif %}
+    </div>
+  </header>
+
+  <section class="results-meta">
+    <div>
+      <h3>Score</h3>
+      <p>
+        {% if summary.max_score %}
+          {{ summary.score }} / {{ summary.max_score }}
+          {% if summary.percentage is not none %}
+            ({{ summary.percentage }}%)
+          {% endif %}
+        {% else %}
+          Pending manual grading
+        {% endif %}
+      </p>
+    </div>
+    <div>
+      <h3>Duration</h3>
+      <p>{{ summary.duration_seconds and (summary.duration_seconds // 60)|int }} min {{ summary.duration_seconds % 60 }} sec</p>
+    </div>
+    <div>
+      <h3>Status</h3>
+      <p>{{ summary.status|replace('_',' ')|title }}</p>
+    </div>
+    <div>
+      <h3>Feedback</h3>
+      <p>{% if summary.overall_feedback %}{{ summary.overall_feedback }}{% else %}—{% endif %}</p>
+    </div>
+  </section>
+
+  <section class="results-answers">
+    {% for answer in summary.answers %}
+    <article class="answer-card {% if answer.is_correct is true %}correct{% elif answer.is_correct is false %}incorrect{% else %}pending{% endif %}">
+      <header>
+        <h2>Question {{ loop.index }}</h2>
+        <span class="type">{{ answer.question_type|replace('_',' ')|title }}</span>
+        {% if answer.points_possible %}
+        <span class="points">{{ answer.points_awarded or 0 }}/{{ answer.points_possible }} pts</span>
+        {% endif %}
+      </header>
+      <div class="question-text">{{ render_question_lines(answer.question_text) }}</div>
+
+      {% set response = answer.response_data or {} %}
+      <div class="answer-section">
+        <h3>Your Answer</h3>
+        {% if answer.question_type in ['multiple_choice','mcq','radio'] %}
+          <p>{{ response.selected or 'No answer' }}</p>
+        {% elif answer.question_type in ['checkbox','multi_select'] %}
+          {% if response.selected %}
+            <ul>{% for item in response.selected %}<li>{{ item }}</li>{% endfor %}</ul>
+          {% else %}
+            <p>No answer</p>
+          {% endif %}
+        {% else %}
+          <p>{{ response.text or 'No answer provided.' }}</p>
+        {% endif %}
+      </div>
+
+      {% if answer.question_type in ['multiple_choice','mcq','radio','checkbox','multi_select','short_answer'] %}
+      <div class="answer-section">
+        <h3>Correct Answer{% if answer.correct_answers and answer.correct_answers|length > 1 %}s{% endif %}</h3>
+        {% if answer.correct_answers %}
+          {% if answer.question_type in ['multiple_choice','mcq','radio','short_answer'] %}
+            <p>{{ answer.correct_answers|join(', ') }}</p>
+          {% else %}
+            <ul>{% for item in answer.correct_answers %}<li>{{ item }}</li>{% endfor %}</ul>
+          {% endif %}
+        {% else %}
+          <p>Manual evaluation</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if answer.feedback %}
+      <div class="answer-section feedback">
+        <h3>Instructor Feedback</h3>
+        <p>{{ answer.feedback }}</p>
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </section>
+</div>
+
+<style>
+.exam-results-shell {
+  max-width: 1000px;
+  margin: 40px auto;
+  background: rgba(12, 18, 36, 0.95);
+  border-radius: 20px;
+  box-shadow: 0 30px 45px rgba(0,0,0,0.45);
+  padding: 28px;
+  display: grid;
+  gap: 24px;
+}
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding-bottom: 18px;
+}
+.results-summary-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.results-summary-chip.pass { background: rgba(106, 220, 148, 0.18); color: #9cfcbf; }
+.results-summary-chip.fail { background: rgba(255, 140, 140, 0.2); color: #ffc8c8; }
+.results-summary-chip.pending { background: rgba(255, 215, 128, 0.2); color: #ffe5af; }
+.results-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 18px;
+}
+.results-meta div {
+  background: rgba(10, 16, 33, 0.9);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.results-answers {
+  display: grid;
+  gap: 18px;
+}
+.answer-card {
+  background: rgba(9, 15, 30, 0.92);
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.05);
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+.answer-card.correct { border-color: rgba(108, 214, 150, 0.3); }
+.answer-card.incorrect { border-color: rgba(255, 136, 136, 0.3); }
+.answer-card.pending { border-color: rgba(132, 180, 255, 0.25); }
+.answer-card header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.answer-card .type {
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.1);
+  font-size: 0.85rem;
+}
+.answer-card .points {
+  margin-left: auto;
+  font-weight: 600;
+}
+.answer-section {
+  background: rgba(255,255,255,0.03);
+  border-radius: 14px;
+  padding: 14px;
+}
+.answer-section h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9fb1ff;
+}
+.answer-section ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.answer-section.feedback {
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.question-text {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+.question-lines {
+  display: grid;
+  gap: 4px;
+}
+.question-main {
+  margin: 0;
+  font-weight: 600;
+  color: #f2f5ff;
+}
+.question-sub {
+  margin: 0;
+  color: #9fb1ff;
+  font-size: 0.95rem;
+}
+@media (max-width: 740px) {
+  .results-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .results-summary-chip {
+    align-self: flex-start;
+  }
+}
+</style>
+{% endblock %}

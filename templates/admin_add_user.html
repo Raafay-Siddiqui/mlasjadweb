@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Add New User{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="preload" href="{{ url_for('static', filename='css/admin.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-stack">
+    <header>
+      <h2 class="admin-page-title">➕ Add New User</h2>
+      <p class="admin-intro">Create accounts and assign roles so students can access the right resources.</p>
+    </header>
+
+    <div class="admin-btn-row">
+      <a href="{{ url_for('admin_dashboard') }}" class="admin-btn admin-btn--ghost admin-btn--small">⬅ Back to Admin Dashboard</a>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="admin-alert">
+          <ul>
+            {% for message in messages %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="admin-card">
+      <form action="{{ url_for('admin_add_user') }}" method="POST" class="admin-form double">
+        <label>
+          <span>Username</span>
+          <input type="text" name="username" required>
+        </label>
+        <label>
+          <span>Password</span>
+          <input type="password" name="password" required>
+        </label>
+        <label>
+          <span>Full Name</span>
+          <input type="text" name="full_name">
+        </label>
+        <label>
+          <span>Age</span>
+          <input type="number" name="age" min="0">
+        </label>
+        <label>
+          <span>Phone Number</span>
+          <input type="text" name="phone_number">
+        </label>
+        <label>
+          <span>Email</span>
+          <input type="email" name="email" required>
+        </label>
+        <label>
+          <span>Role</span>
+          <select name="role" required>
+            <option value="user">Free</option>
+            <option value="paid">Paid</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <div class="admin-btn-row full-span">
+          <button type="submit" class="admin-btn admin-btn--primary">Add User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

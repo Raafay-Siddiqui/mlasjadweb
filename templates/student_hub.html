@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Student Hub – Al-Baqi Academy{% endblock %}
+
+{% block body_class %}bg-geometry{% endblock %}
+
+{% block content %}
+<section id="student-hub" aria-labelledby="student-hub-heading" style="margin-top:40px;">
+  <div class="container">
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div style="position:relative;">
+        <img src="{{ url_for('static', filename='img/student_hub.jpg') }}" alt="Student hub banner" style="width:100%; display:block; max-height:280px; object-fit:cover;">
+        <div style="position:absolute; inset:auto 0 0 0; padding:18px 24px; background:linear-gradient(180deg, rgba(7,11,22,0.05) 0%, rgba(7,11,22,0.82) 75%, rgba(7,11,22,0.94) 100%);">
+          <h2 id="student-hub-heading" style="margin:0;">Student Hub</h2>
+          <p class="sub" style="margin:8px 0 0 0;">Upload class notes, assignments, and resources directly to Imam Asjad.</p>
+        </div>
+      </div>
+
+      <div class="panel" style="margin:0; border-radius:0;">
+        <form action="{{ url_for('student_hub_upload') }}" method="POST" enctype="multipart/form-data" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+          <label style="flex:1 1 260px;">
+            <span style="display:block; font-size:0.9rem; margin-bottom:6px; color:var(--muted);">Upload a file (PDF, DOCX, PPTX, PNG, JPG · max 50MB)</span>
+            <input type="file" name="student_file" accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg" required style="width:100%;">
+          </label>
+          <button type="submit" class="btn primary" style="flex:0 0 auto;">Upload</button>
+        </form>
+
+        <div style="margin-top:32px;">
+          <h3 style="margin:0 0 12px 0;">Your uploads</h3>
+          {% if student_files %}
+          <ul style="list-style:none; margin:0; padding:0; display:grid; gap:14px;">
+            {% for item in student_files %}
+            <li class="panel" style="margin:0; background:rgba(9,14,30,0.6);">
+              <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;">
+                <div style="flex:1 1 260px;">
+                  <strong style="display:block;">{{ item.original_name }}</strong>
+                  <div class="sub" style="margin-top:4px; font-size:0.85rem;">
+                    Uploaded {{ item.uploaded_at.strftime('%d %b %Y, %H:%M') }} · {{ '%.1f' % (item.file_size / (1024 * 1024)) }} MB
+                  </div>
+                  {% if item.feedback_grade or item.feedback_text %}
+                  <div style="margin-top:8px; border-left:2px solid rgba(215,169,79,0.5); padding-left:10px;">
+                    {% if item.feedback_grade %}
+                      <div class="sub" style="margin:0 0 4px 0; font-size:0.85rem; color:var(--brand);"><strong>Grade:</strong> {{ item.feedback_grade }}</div>
+                    {% endif %}
+                    {% if item.feedback_text %}
+                      <div class="sub" style="margin:0; font-size:0.85rem; color:var(--muted); white-space:pre-line;">{{ item.feedback_text }}</div>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <a href="{{ url_for('student_hub_download', file_id=item.id) }}" class="btn ghost" style="flex:0 0 auto;">Download</a>
+                  <form action="{{ url_for('student_hub_delete', file_id=item.id) }}" method="POST" onsubmit="return confirm('Delete {{ item.original_name }}?');" style="flex:0 0 auto;">
+                    <button type="submit" class="btn ghost" style="background:rgba(255,0,0,0.12); border:1px solid rgba(255,0,0,0.4); color:#ff9b9b;">Delete</button>
+                  </form>
+                </div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+            <p class="sub" style="margin:0;">You haven’t uploaded anything yet. Share your first file using the form above.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

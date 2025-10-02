@@ -1,0 +1,401 @@
+/* ================================
+   Base Design
+   ================================ */
+
+:root {
+  --bg: #070b16;
+  --bg-soft: #101730;
+  --card: rgba(16, 23, 40, 0.86);
+  --text: #f5f1e8;
+  --muted: #c7c2b4;
+  --brand: #d7a94f;
+  --brand-2: #2d7785;
+  --danger: #ff8b8b;
+  --ring: 0 0 0 3px rgba(215,169,79,0.35);
+  --radius: 18px;
+  --shadow: 0 14px 36px rgba(0,0,0,0.38),
+             inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.container {
+  max-width: 1100px;
+  margin-inline: auto;
+  padding: 24px;
+}
+
+/* ================================
+   Navbar
+   ================================ */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: saturate(140%) blur(10px);
+  background: rgba(7,11,22,0.78);
+  border-bottom: 1px solid rgba(215,169,79,0.25);
+}
+.nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(12,18,36,0.6);
+  background-image: url('../img/logo_transparent.png');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: var(--shadow);
+}
+.spacer { flex: 1; }
+.nav a { opacity: .9; }
+.nav a:hover { opacity: 1; }
+.nav .btn {
+  padding: .6rem 1rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3340a7, #5866f8);
+  box-shadow: var(--shadow);
+}
+
+/* ================================
+   Hero
+   ================================ */
+.hero {
+  padding: 64px 24px 24px;
+}
+.hero .wrap {
+  display: grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap: 32px;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .85rem;
+  color: #f5f1e8;
+  background: rgba(215,169,79,0.18);
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(215,169,79,0.32);
+}
+h1 {
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.1;
+  margin: 14px 0 10px;
+}
+.lead {
+  color: rgba(246,239,224,0.85);
+  font-size: 1.05rem;
+  max-width: 60ch;
+}
+.cta {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+.secondary-cta {
+  margin-top: 14px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: .88rem 1.05rem;
+  border-radius: 14px;
+  font-weight: 600;
+  border: 1px solid rgba(215,169,79,0.35);
+  box-shadow: var(--shadow);
+}
+.btn.primary {
+  background: linear-gradient(135deg, #d7b76a, #a76a20);
+  color: #111627;
+}
+.btn.ghost {
+  background: rgba(215,169,79,0.1);
+  border-color: rgba(45,119,133,0.35);
+}
+.hero-card {
+  background: linear-gradient(180deg, rgba(45,119,133,0.15), rgba(215,169,79,0.12));
+  padding: 22px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(215,169,79,0.28);
+  box-shadow: var(--shadow);
+}
+.hero-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.hero-list .chip {
+  background: rgba(7,11,22,0.65);
+  border: 1px solid rgba(215,169,79,0.25);
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: .95rem;
+}
+
+/* ================================
+   Sections
+   ================================ */
+section {
+  padding: 36px 24px;
+}
+section h2 {
+  font-size: clamp(22px, 3vw, 32px);
+  margin: 0 0 6px;
+}
+section p.sub {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ================================
+   Courses
+   ================================ */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 16px 0 22px;
+}
+.filters input[type="search"],
+.filters select {
+  background: rgba(245,225,190,0.08);
+  color: var(--text);
+  border: 1px solid rgba(215,169,79,0.3);
+  padding: .7rem .9rem;
+  border-radius: 12px;
+  outline: none;
+}
+.filters input[type="search"]:focus,
+.filters select:focus {
+  box-shadow: var(--ring);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+}
+.card {
+  grid-column: span 12;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 18px;
+  border: 1px solid rgba(215,169,79,0.22);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.card header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.badge {
+  font-size: .78rem;
+  letter-spacing: .2px;
+  color: #0b0f1c;
+  background: linear-gradient(135deg, rgba(215,169,79,0.95), rgba(45,119,133,0.95));
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: .9rem;
+}
+.meta .dot {
+  width: 6px;
+  height: 6px;
+  background: rgba(255,255,255,0.35);
+  border-radius: 999px;
+}
+.card footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+}
+
+@media (min-width: 640px) {
+  .card { grid-column: span 6; }
+}
+@media (min-width: 980px) {
+  .card { grid-column: span 4; }
+}
+
+/* ================================
+   About / Hire / QnA Panels
+   ================================ */
+.panel {
+  background: var(--card);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 900px) {
+  .split { grid-template-columns: 1fr 1fr; }
+}
+.panel label {
+  display: block;
+  font-size: .9rem;
+  margin: .4rem 0 .2rem;
+  color: var(--muted);
+}
+.panel input,
+.panel textarea,
+.panel select {
+  width: 100%;
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,.1);
+  padding: .75rem .85rem;
+  border-radius: 12px;
+}
+.panel textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+/* ================================
+   Footer
+   ================================ */
+footer {
+  padding: 32px 24px;
+  color: var(--muted);
+  border-top: 1px solid rgba(255,255,255,.08);
+  margin-top: 24px;
+}
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.foot .right { margin-left: auto; }
+
+/* ================================
+   Responsive Tweaks
+   ================================ */
+
+/* ================================
+   Responsive Tweaks (fixed for mobile)
+   ================================ */
+
+/* Phones (≤640px) */
+@media (max-width: 640px) {
+  /* General */
+  .container {
+    padding: 16px;
+  }
+
+  /* NAV - Removed conflicting mobile styles (handled in responsive.css) */
+
+  /* HERO */
+  .hero {
+    padding: 32px 16px;
+  }
+  .hero .wrap {
+    grid-template-columns: 1fr; /* stack hero text + card */
+    gap: 20px;
+  }
+  h1 {
+    font-size: 1.6rem;
+  }
+  .lead {
+    font-size: 0.95rem;
+    max-width: 100%;
+  }
+  .cta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .hero-card {
+    margin-top: 8px;
+  }
+  .hero-list {
+    grid-template-columns: 1fr; /* stack chips */
+  }
+
+  /* COURSES */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr; /* one card per row */
+    gap: 16px;
+  }
+  .card {
+    padding: 16px;
+  }
+
+  /* ABOUT / HIRE */
+  .split {
+    grid-template-columns: 1fr; /* stack panels */
+  }
+
+  /* FOOTER */
+  .foot {
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+  }
+  .foot .right {
+    margin-left: 0;
+  }
+}
+
+/* Tablets (641px–980px) */
+@media (min-width: 641px) and (max-width: 980px) {
+  .hero .wrap {
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .hero-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .split {
+    grid-template-columns: 1fr 1fr;
+  }
+}

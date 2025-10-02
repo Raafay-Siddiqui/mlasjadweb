@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Quiz Preview{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="preload" href="{{ url_for('static', filename='css/admin.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-stack">
+    <header>
+      <h2 class="admin-page-title">📝 Quiz Preview</h2>
+      <p class="admin-intro">AI drafted these questions from your slides. Tweak any wording before saving them to the lesson.</p>
+    </header>
+
+    {% if course and lesson %}
+      <div class="admin-card">
+        <h3>{{ course.name|capitalize }} – Year {{ course.year }}</h3>
+        <p class="admin-intro">Lesson: {{ lesson.title }} (Week {{ lesson.week }})</p>
+      </div>
+    {% endif %}
+
+    <form action="{{ url_for('manage_courses') }}" method="GET" class="admin-card admin-form">
+      <div class="admin-btn-row admin-btn-row--tight">
+        <a href="{{ url_for('manage_courses') }}" class="admin-btn admin-btn--ghost">⬅ Back to Courses</a>
+      </div>
+
+      {% for q in quiz %}
+        <div class="admin-ai-card">
+          <label>
+            <span>Question {{ loop.index }}</span>
+            <input type="text" name="question_{{ loop.index }}" value="{{ q['question'] }}" required>
+          </label>
+          <div class="admin-option-grid">
+            <label>
+              <span>Option A</span>
+              <input type="text" name="option_a_{{ loop.index }}" value="{{ q['option_a'] }}" required>
+            </label>
+            <label>
+              <span>Option B</span>
+              <input type="text" name="option_b_{{ loop.index }}" value="{{ q['option_b'] }}" required>
+            </label>
+            <label>
+              <span>Option C</span>
+              <input type="text" name="option_c_{{ loop.index }}" value="{{ q['option_c'] }}" required>
+            </label>
+          </div>
+          <label class="admin-select-block">
+            <span>Correct Answer</span>
+            <select name="correct_answer_{{ loop.index }}">
+              <option value="A" {% if q['correct_answer']=="A" %}selected{% endif %}>A</option>
+              <option value="B" {% if q['correct_answer']=="B" %}selected{% endif %}>B</option>
+              <option value="C" {% if q['correct_answer']=="C" %}selected{% endif %}>C</option>
+            </select>
+          </label>
+        </div>
+      {% endfor %}
+
+      <div class="admin-btn-row">
+        <button type="submit" class="admin-btn admin-btn--primary">✅ Save Quiz</button>
+        <a href="{{ url_for('manage_courses') }}" class="admin-btn admin-btn--ghost">← Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

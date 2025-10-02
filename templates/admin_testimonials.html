@@ -1,0 +1,462 @@
+{% extends "base.html" %}
+{% block title %}Manage Testimonials – Admin{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-header">
+    <h1>📝 Manage Testimonials</h1>
+    <a href="{{ url_for('admin_dashboard') }}" class="btn-back">← Back to Admin Dashboard</a>
+  </div>
+
+  <!-- Filter Tabs -->
+  <div class="filter-tabs">
+    <a href="{{ url_for('admin_testimonials', status='all') }}"
+       class="tab {% if status_filter == 'all' %}active{% endif %}">
+      All ({{ testimonials|length }})
+    </a>
+    <a href="{{ url_for('admin_testimonials', status='pending') }}"
+       class="tab {% if status_filter == 'pending' %}active{% endif %}">
+      Pending
+    </a>
+    <a href="{{ url_for('admin_testimonials', status='approved') }}"
+       class="tab {% if status_filter == 'approved' %}active{% endif %}">
+      Approved
+    </a>
+    <a href="{{ url_for('admin_testimonials', status='rejected') }}"
+       class="tab {% if status_filter == 'rejected' %}active{% endif %}">
+      Rejected
+    </a>
+  </div>
+
+  <!-- Testimonials List -->
+  {% if testimonials %}
+  <div class="testimonials-grid">
+    {% for t in testimonials %}
+    <div class="testimonial-card status-{{ t.status }}">
+      <div class="testimonial-header">
+        <div>
+          <h3>{{ t.name }}</h3>
+          <p class="meta">
+            {{ t.user.username }} • {{ t.course.name }} (Year {{ t.course.year }})
+          </p>
+          <p class="meta">
+            {{ t.created_at.strftime('%b %d, %Y at %I:%M %p') }}
+          </p>
+        </div>
+        <div class="status-badge status-{{ t.status }}">
+          {{ t.status.upper() }}
+        </div>
+      </div>
+
+      <div class="rating">
+        {% for i in range(1, 6) %}
+          {% if i <= t.rating %}
+            ⭐
+          {% else %}
+            ☆
+          {% endif %}
+        {% endfor %}
+        <span class="rating-number">({{ t.rating }}/5)</span>
+      </div>
+
+      <div class="review-text">
+        "{{ t.review }}"
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        {% if t.status != 'approved' %}
+        <form action="{{ url_for('approve_testimonial', testimonial_id=t.id) }}" method="POST" style="display:inline">
+          <button type="submit" class="btn-approve">✅ Approve</button>
+        </form>
+        {% endif %}
+
+        {% if t.status != 'rejected' %}
+        <form action="{{ url_for('reject_testimonial', testimonial_id=t.id) }}" method="POST" style="display:inline">
+          <button type="submit" class="btn-reject">❌ Reject</button>
+        </form>
+        {% endif %}
+
+        <button class="btn-edit" onclick="openEditModal({{ t.id }}, '{{ t.name|escape }}', {{ t.rating }}, '{{ t.review|escape }}')">
+          ✏️ Edit
+        </button>
+
+        <form action="{{ url_for('delete_testimonial', testimonial_id=t.id) }}" method="POST" style="display:inline" onsubmit="return confirm('Delete this testimonial permanently?')">
+          <button type="submit" class="btn-delete">🗑 Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>No testimonials found for this filter.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeEditModal()">&times;</span>
+    <h2>Edit Testimonial</h2>
+    <form id="editForm" method="POST">
+      <input type="hidden" id="editId" name="testimonial_id">
+
+      <label for="editName">Name</label>
+      <input type="text" id="editName" name="name" required>
+
+      <label for="editRating">Rating (1-5)</label>
+      <input type="number" id="editRating" name="rating" min="1" max="5" required>
+
+      <label for="editReview">Review</label>
+      <textarea id="editReview" name="review" rows="5" required></textarea>
+
+      <button type="submit" class="btn-primary">Save Changes</button>
+    </form>
+  </div>
+</div>
+
+<style>
+.admin-container {
+  max-width: 1200px;
+  margin: 40px auto;
+  padding: 24px;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.admin-header h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(24px, 3vw, 36px);
+}
+
+.btn-back {
+  padding: 10px 20px;
+  background: rgba(45, 119, 133, 0.2);
+  border: 1px solid var(--brand-2);
+  color: var(--brand-2);
+  text-decoration: none;
+  border-radius: 10px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-back:hover {
+  background: rgba(45, 119, 133, 0.3);
+  transform: translateX(-2px);
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  padding: 10px 20px;
+  background: rgba(16, 23, 40, 0.6);
+  border: 1px solid rgba(215, 169, 79, 0.3);
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.tab:hover {
+  background: rgba(215, 169, 79, 0.15);
+  border-color: var(--brand);
+}
+
+.tab.active {
+  background: linear-gradient(135deg, #d7a94f, #a76a20);
+  color: #1a1f2b;
+  border-color: var(--brand);
+}
+
+.testimonials-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.testimonial-card {
+  background: var(--card);
+  backdrop-filter: blur(18px);
+  border-radius: var(--radius);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow);
+}
+
+.testimonial-card.status-pending {
+  border-left: 4px solid #f59e0b;
+}
+
+.testimonial-card.status-approved {
+  border-left: 4px solid #10b981;
+}
+
+.testimonial-card.status-rejected {
+  border-left: 4px solid #ef4444;
+}
+
+.testimonial-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.testimonial-header h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 1.25rem;
+}
+
+.meta {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.status-pending {
+  background: #f59e0b;
+  color: #1a1f2b;
+}
+
+.status-badge.status-approved {
+  background: #10b981;
+  color: #1a1f2b;
+}
+
+.status-badge.status-rejected {
+  background: #ef4444;
+  color: #fff;
+}
+
+.rating {
+  font-size: 1.5rem;
+  margin-bottom: 12px;
+}
+
+.rating-number {
+  font-size: 1rem;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+.review-text {
+  font-style: italic;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 20px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.actions button, .actions .btn-edit {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.btn-approve {
+  background: #10b981;
+  color: #fff;
+}
+
+.btn-approve:hover {
+  background: #059669;
+  transform: translateY(-2px);
+}
+
+.btn-reject {
+  background: #ef4444;
+  color: #fff;
+}
+
+.btn-reject:hover {
+  background: #dc2626;
+  transform: translateY(-2px);
+}
+
+.btn-edit {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.btn-edit:hover {
+  background: #2563eb;
+  transform: translateY(-2px);
+}
+
+.btn-delete {
+  background: #6b7280;
+  color: #fff;
+}
+
+.btn-delete:hover {
+  background: #4b5563;
+  transform: translateY(-2px);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--muted);
+}
+
+/* Modal */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--card);
+  margin: 10% auto;
+  padding: 32px;
+  border: 1px solid rgba(215, 169, 79, 0.3);
+  border-radius: var(--radius);
+  width: 90%;
+  max-width: 600px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.close {
+  color: var(--muted);
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--text);
+}
+
+.modal-content h2 {
+  margin-top: 0;
+  color: var(--brand);
+}
+
+.modal-content label {
+  display: block;
+  margin-top: 16px;
+  margin-bottom: 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.modal-content input,
+.modal-content textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(215, 169, 79, 0.3);
+  background: rgba(16, 23, 40, 0.6);
+  color: var(--text);
+}
+
+.modal-content .btn-primary {
+  width: 100%;
+  margin-top: 20px;
+  padding: 14px;
+  background: linear-gradient(135deg, #d7a94f, #a76a20);
+  color: #1a1f2b;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modal-content .btn-primary:hover {
+  opacity: 0.9;
+}
+
+@media (max-width: 768px) {
+  .admin-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+
+  .actions button, .actions .btn-edit {
+    width: 100%;
+  }
+}
+</style>
+
+<script>
+function openEditModal(id, name, rating, review) {
+  const modal = document.getElementById('editModal');
+  const form = document.getElementById('editForm');
+
+  form.action = `/admin/testimonials/${id}/edit`;
+  document.getElementById('editId').value = id;
+  document.getElementById('editName').value = name;
+  document.getElementById('editRating').value = rating;
+  document.getElementById('editReview').value = review;
+
+  modal.style.display = 'block';
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').style.display = 'none';
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+  const modal = document.getElementById('editModal');
+  if (event.target == modal) {
+    closeEditModal();
+  }
+}
+</script>
+{% endblock %}

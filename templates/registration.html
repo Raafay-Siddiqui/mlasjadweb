@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<style>
+.cookies-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+.cookies-modal[hidden] {
+  display: none;
+}
+.cookies-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 24, 0.78);
+  backdrop-filter: blur(6px);
+}
+.cookies-card {
+  position: relative;
+  background: rgba(17, 22, 40, 0.96);
+  border: 1px solid rgba(94, 124, 250, 0.4);
+  border-radius: 18px;
+  padding: 28px;
+  max-width: 520px;
+  width: calc(100% - 32px);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+.cookies-card h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+.cookies-card p {
+  margin: 0;
+  color: #cbd3ff;
+  line-height: 1.5;
+}
+.cookies-card .btn {
+  align-self: flex-end;
+}
+#registration-form.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+#registration-form.is-disabled button[type="submit"] {
+  cursor: not-allowed;
+}
+</style>
+
+<div class="card">
+<div id="cookies-modal" class="cookies-modal" hidden>
+  <div class="cookies-backdrop"></div>
+  <div class="cookies-card">
+    <h3>Cookie & Tracking Notice</h3>
+    <p>Salaam! This website uses cookies to run essential features — including login, account preferences, and ensuring services work properly.</p>
+    <p>We also use cookies for user tracking to improve courses and analytics. These cookies are required and cannot be opted out of.</p>
+    <p>We do not share your data with third parties or other companies.</p>
+    <button type="button" id="cookies-accept" class="btn primary">I Understand</button>
+  </div>
+</div>
+
+  <div class="logo-big"></div>
+  <h2>Register</h2>
+
+  <form id="registration-form" action="/register" method="post" class="cookies-disabled">
+    <input type="text" name="username" placeholder="Choose Username" required>
+    <input type="password" name="password" placeholder="Choose Password" required>
+    <input type="text" name="full_name" placeholder="Full Name" required>
+    <input type="text" name="age" placeholder="Age" required>
+    <input type="text" name="phone_number" placeholder="Phone Number" required>
+    <input type="email" name="email" placeholder="Email Address" required>
+    <button type="submit">Register</button>
+  </form>
+</div>
+<script>
+(function() {
+  const modal = document.getElementById('cookies-modal');
+  const acceptBtn = document.getElementById('cookies-accept');
+  const form = document.getElementById('registration-form');
+
+  if (!modal || !acceptBtn || !form) { return; }
+
+  const acknowledged = document.cookie.split('; ').find(row => row.startsWith('cookies_acknowledged='));
+  if (!acknowledged) {
+    modal.hidden = false;
+    form.classList.add('is-disabled');
+    for (const input of form.querySelectorAll('input, button[type="submit"]')) {
+      input.disabled = true;
+    }
+  }
+
+  acceptBtn.addEventListener('click', () => {
+    const expiry = new Date();
+    expiry.setFullYear(expiry.getFullYear() + 1);
+    document.cookie = `cookies_acknowledged=true; path=/; expires=${expiry.toUTCString()}`;
+    modal.hidden = true;
+    form.classList.remove('is-disabled');
+    for (const input of form.querySelectorAll('input, button[type="submit"]')) {
+      input.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

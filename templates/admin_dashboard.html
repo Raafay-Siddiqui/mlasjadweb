@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block body_class %}bg-dome{% endblock %}
+
+{% block content %}
+<link rel="preload" href="{{ url_for('static', filename='css/admin.css') }}" as="style">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+
+<div class="admin-container">
+  <div class="admin-stack">
+    <header>
+      <h2 class="admin-page-title">⚙️ Admin Dashboard</h2>
+      <p class="admin-intro">Manage users, roles, courses, and platform access from one place.</p>
+    </header>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="admin-alert">
+          <ul>
+            {% for message in messages %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="admin-card">
+      <div class="admin-stack">
+        <a href="{{ url_for('manage_courses') }}" class="admin-btn admin-btn--primary admin-btn--block">➡️ Course Management</a>
+        <a href="{{ url_for('admin_exams') }}" class="admin-btn admin-btn--ghost admin-btn--block">🧪 Manage Exams</a>
+        <a href="{{ url_for('admin_testimonials') }}" class="admin-btn admin-btn--ghost admin-btn--block">📝 Manage Testimonials</a>
+        <a href="{{ url_for('admin_qna') }}" class="admin-btn admin-btn--ghost admin-btn--block">💬 Manage Q&amp;A</a>
+        <a href="{{ url_for('admin_add_user') }}" class="admin-btn admin-btn--ghost admin-btn--block">➕ Add New User</a>
+        <a href="{{ url_for('admin_users') }}" class="admin-btn admin-btn--ghost admin-btn--block">👤 Manage Users</a>
+        <a href="{{ url_for('admin_student_files') }}" class="admin-btn admin-btn--ghost admin-btn--block">📁 Student Hub Files</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
