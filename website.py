@@ -2552,6 +2552,34 @@ def stats():
     total_quiz_attempts = QuizAttempt.query.filter_by(user_id=user.id).count()
     passed_quizzes = QuizAttempt.query.filter_by(user_id=user.id, passed=True).count()
 
+    # Exam statistics
+    exam_attempts = (
+        ExamAttempt.query
+        .filter_by(user_id=user.id)
+        .order_by(ExamAttempt.end_time.desc(), ExamAttempt.start_time.desc())
+        .all()
+    )
+    total_exam_attempts = len(exam_attempts)
+    passed_exams = sum(1 for attempt in exam_attempts if attempt.passed is True)
+
+    exam_percentages = []
+    exam_details = []
+    for attempt in exam_attempts:
+        if attempt.max_score:
+            percentage = round((attempt.score / attempt.max_score) * 100)
+            exam_percentages.append(percentage)
+        else:
+            percentage = 0
+
+        exam_details.append({
+            'exam': attempt.exam,
+            'course': attempt.course or (attempt.exam.course if attempt.exam else None),
+            'attempt': attempt,
+            'percentage': percentage
+        })
+
+    avg_exam_percentage = round(sum(exam_percentages) / len(exam_percentages), 1) if exam_percentages else None
+
     return render_template(
         "user/stats.html",
         user=user,
@@ -2560,7 +2588,11 @@ def stats():
         courses_completed=courses_completed,
         total_courses=total_courses,
         total_quiz_attempts=total_quiz_attempts,
-        passed_quizzes=passed_quizzes
+        passed_quizzes=passed_quizzes,
+        total_exam_attempts=total_exam_attempts,
+        passed_exams=passed_exams,
+        avg_exam_percentage=avg_exam_percentage,
+        exam_details=exam_details
     )
 
 
