@@ -26,6 +26,45 @@ cp .env.example .env
 - `SECRET_KEY`: Generate using `python -c "import os; print(os.urandom(32).hex())"`
 - `DATABASE_URL`: PostgreSQL connection string (e.g., `postgresql://user:pass@localhost/dbname`)
 - `FLASK_ENV`: Set to `production`
+- `SESSION_COOKIE_SECURE`: Set to `True` once HTTPS is in place. Leave `False` temporarily if serving over plain HTTP (otherwise browsers will discard the session cookie).
+
+### 2a. Session configuration checklist
+
+- Ensure the production process exports a **stable** `SECRET_KEY`. If it is missing, Flask auto-generates a new one on every restart and all sessions/logins are invalidated.
+- Export `SESSION_COOKIE_SECURE=False` whenever the app is exposed over HTTP during setup/testing. Switch it back to `True` immediately after TLS is enabled.
+- If you rely on `flask-session` or server-side session storage, point `SESSION_FILE_DIR` (or equivalent) to a directory outside your repo and exclude it from git.
+
+### 2b. Copying SQLite data (temporary workflows)
+
+If you are still using the bundled SQLite database during early deployments:
+
+1. Copy the populated file from your dev machine: `scp path/to/instance/site.db user@server:/var/www/mlasjad/instance/site.db`
+2. Create the `instance/` directory on the server first (`mkdir -p /var/www/mlasjad/instance`).
+3. Stop Gunicorn before replacing the file, then restart it so the new data is picked up.
+4. Treat this as a stop-gap—plan to migrate to PostgreSQL and scripted migrations before production launch.
+
+### 2c. Migrating from SQLite to PostgreSQL
+
+1. **Install PostgreSQL locally** (e.g., `brew install postgresql@15`) and on the VPS (`sudo apt install postgresql`).
+2. **Install the Python driver**: `pip install psycopg2-binary` (already listed in `requirements.txt`).
+3. **Create the target database**
+   ```bash
+   # local example
+   createdb mlasjad
+   # server example
+   sudo -u postgres createdb mlasjad
+   sudo -u postgres createuser --pwprompt mlasjad_app
+   sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE mlasjad TO mlasjad_app;"
+   ```
+4. **Point the app at PostgreSQL** by setting `DATABASE_URL=postgresql+psycopg2://user:password@host:5432/mlasjad` in your `.env` (locally) or environment variables (server) and run `flask db upgrade` to create the schema.
+5. **Copy data from SQLite** into the empty PostgreSQL database:
+   ```bash
+   python scripts/sqlite_to_postgres.py \
+       --sqlite instance/site.db \
+       --postgres "$DATABASE_URL"
+   ```
+6. Repeat the same steps on the VPS (run migrations, copy the SQLite snapshot once) and then retire the SQLite file.
+7. From this point on, use `pg_dump`/`pg_restore` to move data between environments instead of copying SQLite files.
 
 ### 3. Initialize Database
 
@@ -142,9 +181,11 @@ docker run -p 8000:8000 --env-file .env web1
 - [ ] Set `FLASK_ENV=production`
 - [ ] Generate and set strong `SECRET_KEY`
 - [ ] Use PostgreSQL (not SQLite)
+- [ ] Run `flask db upgrade` against PostgreSQL in every environment before pushing data
+- [ ] Capture backups with `pg_dump` before deploying schema changes
 - [ ] Set `DEBUG=False` in `.env`
 - [ ] Enable HTTPS/SSL
-- [ ] Set `SESSION_COOKIE_SECURE=True`
+- [ ] Set `SESSION_COOKIE_SECURE=True` (after HTTPS is enabled; keep `False` only while testing on HTTP)
 - [ ] Configure firewall rules
 - [ ] Set up regular database backups
 - [ ] Configure logging
