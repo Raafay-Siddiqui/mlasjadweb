@@ -647,9 +647,6 @@ def _grade_objective_response(question: 'ExamQuestion', response_data, auto_pass
         }
 
         if not correct_options:
-            if auto_pass_subjective:
-                points = float(question.points or 0)
-                return True, points, normalized
             return None, 0.0, normalized
 
         is_correct = selected_set == correct_options
@@ -701,9 +698,6 @@ def _grade_objective_response(question: 'ExamQuestion', response_data, auto_pass
 
 def _compute_attempt_score(attempt: 'ExamAttempt') -> None:
     """Aggregate scoring fields for the attempt and set status if auto-graded."""
-    # Refresh the answers relationship to get latest data
-    db.session.refresh(attempt, ['answers'])
-
     total_awarded = 0.0
     requires_manual = False
     for answer in attempt.answers:
@@ -1122,7 +1116,15 @@ def register():
         raw_password = request.form['password']
         password = bcrypt.generate_password_hash(raw_password).decode('utf-8')
         full_name = request.form.get('full_name')
-        age = request.form.get('age')
+        age_raw = request.form.get('age', '').strip()
+        if age_raw:
+            try:
+                age = int(age_raw)
+            except ValueError:
+                flash("Please enter a valid numeric age or leave the field blank.")
+                return redirect(url_for('register'))
+        else:
+            age = None
         phone_number = request.form.get('phone_number')
         email = request.form.get('email')
 
@@ -2549,36 +2551,6 @@ def stats():
     total_quiz_attempts = QuizAttempt.query.filter_by(user_id=user.id).count()
     passed_quizzes = QuizAttempt.query.filter_by(user_id=user.id, passed=True).count()
 
-    # Exam statistics
-    exam_attempts = ExamAttempt.query.filter_by(user_id=user.id).filter(
-        ExamAttempt.status.in_(['graded', 'passed', 'failed'])
-    ).order_by(ExamAttempt.end_time.desc()).all()
-
-    total_exam_attempts = len(exam_attempts)
-    passed_exams = sum(1 for attempt in exam_attempts if attempt.passed)
-
-    # Calculate average exam score
-    exam_scores = [attempt.score for attempt in exam_attempts if attempt.max_score and attempt.max_score > 0]
-    exam_max_scores = [attempt.max_score for attempt in exam_attempts if attempt.max_score and attempt.max_score > 0]
-
-    avg_exam_percentage = None
-    if exam_scores and exam_max_scores:
-        total_points = sum(exam_scores)
-        total_possible = sum(exam_max_scores)
-        avg_exam_percentage = round((total_points / total_possible) * 100, 1) if total_possible > 0 else 0
-
-    # Get detailed exam attempts with exam info
-    exam_details = []
-    for attempt in exam_attempts[:10]:  # Show last 10 attempts
-        exam = attempt.exam
-        course = exam.course if exam else None
-        exam_details.append({
-            'attempt': attempt,
-            'exam': exam,
-            'course': course,
-            'percentage': round((attempt.score / attempt.max_score) * 100, 1) if attempt.max_score else 0
-        })
-
     return render_template(
         "user/stats.html",
         user=user,
@@ -2587,11 +2559,7 @@ def stats():
         courses_completed=courses_completed,
         total_courses=total_courses,
         total_quiz_attempts=total_quiz_attempts,
-        passed_quizzes=passed_quizzes,
-        total_exam_attempts=total_exam_attempts,
-        passed_exams=passed_exams,
-        avg_exam_percentage=avg_exam_percentage,
-        exam_details=exam_details
+        passed_quizzes=passed_quizzes
     )
 
 
@@ -3843,7 +3811,6 @@ def submit_exam(course_id, exam_id):
         )
         db.session.add(answer)
 
-    db.session.flush()
     attempt.autosave_payload = None
     _finish_attempt(attempt, submitted_at=now)
     db.session.commit()

@@ -51,7 +51,8 @@ class ProductionConfig(Config):
     if not SQLALCHEMY_DATABASE_URI or SQLALCHEMY_DATABASE_URI.startswith('sqlite'):
         print("WARNING: Using SQLite in production is not recommended. Set DATABASE_URL to a PostgreSQL connection string.")
 
-    SESSION_COOKIE_SECURE = True
+    # Default to secure cookies, but allow explicit override for non-HTTPS deployments
+    SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'True').lower() == 'true'
 
 
 class TestingConfig(Config):
