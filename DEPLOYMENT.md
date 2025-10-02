@@ -66,6 +66,20 @@ If you are still using the bundled SQLite database during early deployments:
 6. Repeat the same steps on the VPS (run migrations, copy the SQLite snapshot once) and then retire the SQLite file.
 7. From this point on, use `pg_dump`/`pg_restore` to move data between environments instead of copying SQLite files.
 
+### 2d. Automating PostgreSQL backups
+
+- Use the helper script `scripts/backup_postgres.sh` to capture compressed dumps. It reads `DATABASE_URL`, writes to `backups/postgres/` by default, and retains the most recent 14 files.
+- On the VPS, install a cron entry (run as root or the deploy user) to execute the script nightly:
+  ```bash
+  # /etc/cron.d/mlasjad-db-backup
+  0 2 * * * root cd /var/www/mlasjad && \ 
+      export DATABASE_URL='postgresql+psycopg2://mlasjad_user:Albaqi123?!@127.0.0.1:5432/mlasjad_db' && \ 
+      BACKUP_DIR=/var/www/mlasjad/backups/postgres \ 
+      /var/www/mlasjad/scripts/backup_postgres.sh >> /var/log/mlasjad_db_backup.log 2>&1
+  ```
+- Alternatively create a systemd timer that runs the script; ensure the target backup directory exists and is writable by the account executing the job.
+- Test the command manually once before enabling the schedule, and monitor the log for failures.
+
 ### 3. Initialize Database
 
 ```bash
