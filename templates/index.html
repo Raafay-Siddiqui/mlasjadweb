@@ -90,7 +90,7 @@
   <div class="container">
     <div class="panel">
       <!-- Show public questions -->
-      <h3 style="margin-top:0">💬 Public Q&A</h3>
+      <h3 id="qa-title" style="margin-top:0">💬 Public Q&A</h3>
       {% for q in public_qs %}
         <div style="margin-bottom:12px; padding:10px; background:#1a223f; border-radius:8px">
           <!-- Always prefix with "Question:" -->
@@ -101,7 +101,7 @@
             {% if msgs|length > 0 %}
               {% for msg in msgs %}
                 {% if loop.revindex0 < 3 %}
-                  <p style="margin:6px 0; padding-left:10px; border-left:2px solid {{ '#d7a94f' if msg.sender == 'admin' else '#8b9fff' }}">
+                  <p class="qa-message {% if msg.sender == 'admin' %}admin-msg{% else %}user-msg{% endif %}">
                     {{ msg.body }}
                   </p>
                 {% endif %}
@@ -310,6 +310,20 @@
 
 <!-- Testimonials Carousel Styling -->
 <style>
+.qa-message {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 2px solid;
+}
+
+.qa-message.admin-msg {
+  border-left-color: #d7a94f;
+}
+
+.qa-message.user-msg {
+  border-left-color: #8b9fff;
+}
+
 #testimonials {
   background: rgba(10, 15, 30, 0.5);
   padding: 60px 24px;
