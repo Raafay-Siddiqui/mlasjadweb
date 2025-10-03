@@ -152,7 +152,8 @@
               </div>
             </div>
             <p class="testimonial-text">"{{ t.review }}"</p>
-            <p class="testimonial-course">— {{ t.course.name }}</p>
+            {% set course_label = t.course.name if t.course else 'Course feedback' %}
+            <p class="testimonial-course">— {{ course_label }}</p>
           </div>
         </div>
         {% endfor %}
