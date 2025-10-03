@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Al-Baqi Academy – Bilal Masjid Greenford{% endblock %}
+{% block title %}Al-Baqi Academy {% endblock %}
 
-{% block body_class %}bg-calligraphy{% endblock %}
+{% block body_class %}bg-calligraphy homepage{% endblock %}
 
 {% block content %}
 <!-- Link to home.css for index-specific styles -->
@@ -16,7 +16,7 @@
 <header class="hero">
   <div class="container wrap">
     <div>
-      <span class="tag">Bilal Masjid Greenford • Term-time classes</span>
+      <span class="tag"></span>
       <h1>The Foundation of Islam, made easy, explained clearly in English.</h1>
       <p class="lead">
         Beginner to advanced lessons — <strong>top quality recordings</strong>  
@@ -32,7 +32,6 @@
       {% endif %}
     </div>
     <div class="cta secondary-cta">
-      <a class="btn ghost" href="#invite">Enquire About Events</a>
     </div>
     </div>
     <aside class="hero-card" aria-label="Highlights">
@@ -53,35 +52,23 @@
 <section id="courses" aria-labelledby="courses-title">
   <div class="container">
     <h2 id="courses-title">Islamic Diploma</h2>
-    <p class="sub">Explore all available courses dynamically.</p>
+    <p class="sub">Explore some of our featured courses.</p>
 
-    {% set grouped = {} %}
-    {% for c in courses %}
-      {% if c.year not in grouped %}
-        {% set _ = grouped.update({c.year: []}) %}
-      {% endif %}
-      {% set _ = grouped[c.year].append(c) %}
-    {% endfor %}
-
-    {% for year, year_courses in grouped.items()|sort %}
-      <h3 style="margin-top:24px">Year {{ year }}</h3>
-      <div class="grid">
-        {% for course in year_courses %}
-          <article class="card">
-            <header>
-              <span class="badge">Year {{ course.year }}</span>
-              <h3>{{ course.name }}</h3>
-            </header>
-            <p class="sub">{{ course.description or "No description yet." }}</p>
-            <footer>
-              <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
-                Open lessons
-              </a>
-            </footer>
-          </article>
-        {% endfor %}
-      </div>
-    {% endfor %}
+    <div class="grid">
+      {% for course in courses %}
+        <article class="card">
+          <header>
+            <h3>{{ course.name }}</h3>
+          </header>
+          <p class="sub">{{ course.description or "No description yet." }}</p>
+          <footer>
+            <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+              Open lessons
+            </a>
+          </footer>
+        </article>
+      {% endfor %}
+    </div>
   </div>
 </section>
 
@@ -92,7 +79,7 @@
       <!-- Show public questions -->
       <h3 id="qa-title" style="margin-top:0">💬 Public Q&A</h3>
       {% for q in public_qs %}
-        <div style="margin-bottom:12px; padding:10px; background:#1a223f; border-radius:8px">
+        <div class="qa-question-box">
           <!-- Always prefix with "Question:" -->
           <p><strong>Question:</strong> {{ q.title }}</p>
 
@@ -107,12 +94,12 @@
                 {% endif %}
               {% endfor %}
             {% else %}
-              <p style="color:#aaa; font-style:italic">No responses yet.</p>
+              <p class="qa-no-response">No responses yet.</p>
             {% endif %}
           </div>
         </div>
       {% else %}
-        <p style="color:#aaa">No public questions yet.</p>
+        <p class="qa-no-response">No public questions yet.</p>
       {% endfor %}
 
       <!-- Ask new question (only if logged in) -->
@@ -124,7 +111,7 @@
         </form>
         <p style="margin-top:10px"><a href="{{ url_for('qa_dashboard') }}" class="btn">📂 View My Q&A</a></p>
       {% else %}
-        <p style="margin-top:15px; color:#aaa">
+        <p class="qa-login-prompt">
           Please <a href="{{ url_for('login') }}">log in</a> to ask a question or see your private Q&A.
         </p>
       {% endif %}
@@ -310,6 +297,14 @@
 
 <!-- Testimonials Carousel Styling -->
 <style>
+.qa-question-box {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
 .qa-message {
   margin: 6px 0;
   padding-left: 10px;
@@ -317,15 +312,30 @@
 }
 
 .qa-message.admin-msg {
-  border-left-color: #d7a94f;
+  border-left-color: var(--brand);
 }
 
 .qa-message.user-msg {
-  border-left-color: #8b9fff;
+  border-left-color: var(--brand-2);
 }
 
-#testimonials {
+.qa-no-response {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.qa-login-prompt {
+  margin-top: 15px;
+  color: var(--muted);
+}
+
+[data-theme="dark"] #testimonials {
   background: rgba(10, 15, 30, 0.5);
+  padding: 60px 24px;
+}
+
+[data-theme="light"] #testimonials {
+  background: rgba(215, 169, 79, 0.08);
   padding: 60px 24px;
 }
 

@@ -9,107 +9,295 @@
     <h2 id="courses-title">Welcome {{ user.full_name or user.username }} 👋</h2>
     <p class="sub">Here are your available courses:</p>
 
-    <!-- All Parent Courses with Hierarchy -->
-    {% for course in all_parent_courses %}
-      {% set access_data = course_access_data[course.id] %}
-      <div style="margin-top: 36px;">
-        <h3>{{ course.name|capitalize }} - Year {{ course.year }}</h3>
-
-        <article class="card">
-          <header>
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <span class="badge">Year {{ course.year }}</span>
-              {% if access_data.has_access %}
-                <span class="badge" style="background: #10b981;">✅ Enrolled</span>
-              {% elif access_data.is_free %}
-                <span class="badge" style="background: #10b981;">🆓 Free</span>
-              {% elif not access_data.has_access %}
-                <span class="badge" style="background: #f59e0b;">💰 ${{ "%.2f"|format(course.price) }}</span>
-              {% endif %}
-            </div>
-            <h3>{{ course.name|capitalize }}</h3>
-          </header>
-          <p class="sub">{{ course.description or "Course description coming soon." }}</p>
-          <footer>
-            {% if access_data.has_access or access_data.is_free %}
-              <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">Open lessons</a>
-              {% if course.id in finished_course_ids and course.id not in reviewed_course_ids %}
-                <a class="btn ghost" href="{{ url_for('submit_review', course_id=course.id) }}" style="margin-top: 8px;">📝 Leave a Review</a>
-              {% elif course.id in reviewed_course_ids %}
-                <span class="badge" style="background: #10b981; margin-top: 8px; display: inline-block;">✅ Review Submitted</span>
-              {% endif %}
-            {% else %}
-              <div style="display: flex; flex-direction: column; gap: 12px; align-items: flex-start;">
-                <button class="btn primary" disabled style="opacity: 0.6; cursor: not-allowed;">🔒 Purchase Required</button>
-                <p class="sub" style="margin: 0; color: #f59e0b; font-size: 0.9rem;">💳 Stripe integration coming soon</p>
-              </div>
-            {% endif %}
-          </footer>
-        </article>
-
-        <!-- Children (Years/Sub-courses) -->
-        {% if access_data.children %}
-          <div class="grid" style="margin-top: 16px;">
-            {% for child_data in access_data.children %}
-              {% set child = child_data.course %}
-              <article class="card" style="border-left: 4px solid #4dabf7;">
-                <header>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <span class="badge" style="background: #4dabf7;">Sub-course</span>
-                    {% if child_data.has_access %}
-                      <span class="badge" style="background: #10b981;">✅ Enrolled</span>
-                    {% elif child_data.is_free %}
-                      <span class="badge" style="background: #10b981;">🆓 Free</span>
-                    {% elif not child_data.has_access %}
-                      <span class="badge" style="background: #f59e0b;">💰 ${{ "%.2f"|format(child.price) }}</span>
-                    {% endif %}
-                  </div>
-                  <h4>{{ child.name|capitalize }}</h4>
-                </header>
-                <p class="sub">{{ child.description or "Sub-course description coming soon." }}</p>
-                <footer>
-                  {% if child_data.has_access or child_data.is_free %}
-                    <a class="btn ghost" href="{{ url_for('course_page', course_name=child.name, year=child.year) }}">Open lessons</a>
+    <!-- Standalone Courses Section -->
+    {% if standalone_courses %}
+      <div class="course-section" style="margin-top: 48px;">
+        <h3 class="section-title">📚 Standalone Courses</h3>
+        <div class="grid" style="margin-top: 20px;">
+          {% for data in standalone_courses %}
+            {% set course = data.course %}
+            <article class="card course-card">
+              <header>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  {% if data.is_free %}
+                    <span class="badge badge-free">🆓 Free</span>
+                  {% elif data.has_access %}
+                    <span class="badge badge-enrolled">✅ Enrolled</span>
+                  {% elif data.requires_approval %}
+                    <span class="badge badge-warning">🔐 Approval Required</span>
                   {% else %}
-                    <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start;">
-                      <button class="btn ghost" disabled style="opacity: 0.6; cursor: not-allowed;">🔒 Purchase Required</button>
-                      <p class="sub" style="margin: 0; color: #f59e0b; font-size: 0.85rem;">💳 Stripe integration coming soon</p>
-                    </div>
+                    <span class="badge badge-price">💰 ${{ "%.2f"|format(course.price) }}</span>
                   {% endif %}
-                </footer>
-              </article>
-            {% endfor %}
-          </div>
-        {% endif %}
-      </div>
-    {% endfor %}
-
-    <!-- Backward compatibility: Show legacy courses not in new system -->
-    {% if courses %}
-      <div style="margin-top: 48px; padding-top: 24px; border-top: 2px solid #e5e7eb;">
-        <h3>Legacy Courses</h3>
-        <div class="grid" style="margin-top: 16px;">
-          {% for course_name in courses %}
-            {% set is_in_parent = namespace(found=false) %}
-            {% for c in all_parent_courses %}
-              {% if c.name == course_name %}
-                {% set is_in_parent.found = true %}
-              {% endif %}
-            {% endfor %}
-            {% if not is_in_parent.found %}
-              <article class="card">
-                <header><h3>{{ course_name|capitalize }}</h3></header>
-                <p class="sub">Legacy course access</p>
-                <footer>
-                  <a class="btn primary" href="{{ url_for('course_page', course_name=course_name, year=1) }}">Open lessons</a>
-                </footer>
-              </article>
-            {% endif %}
+                </div>
+                <h3>{{ course.name|capitalize }}</h3>
+              </header>
+              <p class="sub">{{ course.description or "Course description coming soon." }}</p>
+              <footer>
+                {% if data.has_access or data.is_free %}
+                  {% if data.is_started %}
+                    <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                      Continue Learning
+                    </a>
+                    <div class="progress-bar-container" style="margin-top: 12px;">
+                      <div class="progress-bar-label">Progress: {{ data.progress_percent }}% Completed</div>
+                      <div class="progress-bar">
+                        <div class="progress-bar-fill" style="width: {{ data.progress_percent }}%;"></div>
+                      </div>
+                    </div>
+                  {% else %}
+                    <a class="btn" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                      Course Not Started
+                    </a>
+                  {% endif %}
+                  {% if course.id in finished_course_ids and course.id not in reviewed_course_ids %}
+                    <a class="btn ghost" href="{{ url_for('submit_review', course_id=course.id) }}" style="margin-top: 8px;">📝 Leave a Review</a>
+                  {% elif course.id in reviewed_course_ids %}
+                    <span class="badge badge-success" style="margin-top: 8px; display: inline-block;">✅ Review Submitted</span>
+                  {% endif %}
+                {% elif data.requires_approval %}
+                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
+                    Not Accepted Yet
+                  </button>
+                {% else %}
+                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
+                    Not Bought Yet
+                  </button>
+                  <p class="sub" style="margin: 8px 0 0; color: #f59e0b; font-size: 0.9rem;">💳 Stripe integration coming soon</p>
+                {% endif %}
+              </footer>
+            </article>
           {% endfor %}
         </div>
       </div>
     {% endif %}
+
+    <!-- Year 1 Courses Section -->
+    {% if year_1_courses %}
+      <div class="course-section" style="margin-top: 48px;">
+        <h3 class="section-title">📖 Year 1 Courses</h3>
+        <div class="grid" style="margin-top: 20px;">
+          {% for data in year_1_courses %}
+            {% set course = data.course %}
+            <article class="card course-card">
+              <header>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <span class="badge" style="background: #3b82f6;">Year 1</span>
+                  {% if data.is_free %}
+                    <span class="badge badge-free">🆓 Free</span>
+                  {% elif data.has_access %}
+                    <span class="badge badge-enrolled">✅ Enrolled</span>
+                  {% elif data.requires_approval %}
+                    <span class="badge badge-warning">🔐 Approval Required</span>
+                  {% else %}
+                    <span class="badge badge-price">💰 ${{ "%.2f"|format(course.price) }}</span>
+                  {% endif %}
+                </div>
+                <h3>{{ course.name|capitalize }}</h3>
+              </header>
+              <p class="sub">{{ course.description or "Course description coming soon." }}</p>
+              <footer>
+                {% if data.has_access or data.is_free %}
+                  {% if data.is_started %}
+                    <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                      Continue Learning
+                    </a>
+                    <div class="progress-bar-container" style="margin-top: 12px;">
+                      <div class="progress-bar-label">Progress: {{ data.progress_percent }}% Completed</div>
+                      <div class="progress-bar">
+                        <div class="progress-bar-fill" style="width: {{ data.progress_percent }}%;"></div>
+                      </div>
+                    </div>
+                  {% else %}
+                    <a class="btn" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                      Course Not Started
+                    </a>
+                  {% endif %}
+                  {% if course.id in finished_course_ids and course.id not in reviewed_course_ids %}
+                    <a class="btn ghost" href="{{ url_for('submit_review', course_id=course.id) }}" style="margin-top: 8px;">📝 Leave a Review</a>
+                  {% elif course.id in reviewed_course_ids %}
+                    <span class="badge badge-success" style="margin-top: 8px; display: inline-block;">✅ Review Submitted</span>
+                  {% endif %}
+                {% elif data.requires_approval %}
+                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
+                    Not Accepted Yet
+                  </button>
+                {% else %}
+                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
+                    Not Bought Yet
+                  </button>
+                  <p class="sub" style="margin: 8px 0 0; color: #f59e0b; font-size: 0.9rem;">💳 Stripe integration coming soon</p>
+                {% endif %}
+              </footer>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Year 2 Courses Section -->
+    {% if year_2_courses %}
+      <div class="course-section" style="margin-top: 48px;">
+        <h3 class="section-title">🎓 Year 2 Courses</h3>
+        <div class="grid" style="margin-top: 20px;">
+          {% for data in year_2_courses %}
+            {% set course = data.course %}
+            <article class="card course-card">
+              <header>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <span class="badge" style="background: #8b5cf6;">Year 2</span>
+                  {% if data.is_free %}
+                    <span class="badge badge-free">🆓 Free</span>
+                  {% elif data.has_access %}
+                    <span class="badge badge-enrolled">✅ Enrolled</span>
+                  {% elif data.requires_approval %}
+                    <span class="badge badge-warning">🔐 Approval Required</span>
+                  {% else %}
+                    <span class="badge badge-price">💰 ${{ "%.2f"|format(course.price) }}</span>
+                  {% endif %}
+                </div>
+                <h3>{{ course.name|capitalize }}</h3>
+              </header>
+              <p class="sub">{{ course.description or "Course description coming soon." }}</p>
+              <footer>
+                {% if data.has_access or data.is_free %}
+                  {% if data.is_started %}
+                    <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                      Continue Learning
+                    </a>
+                    <div class="progress-bar-container" style="margin-top: 12px;">
+                      <div class="progress-bar-label">Progress: {{ data.progress_percent }}% Completed</div>
+                      <div class="progress-bar">
+                        <div class="progress-bar-fill" style="width: {{ data.progress_percent }}%;"></div>
+                      </div>
+                    </div>
+                  {% else %}
+                    <a class="btn" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                      Course Not Started
+                    </a>
+                  {% endif %}
+                  {% if course.id in finished_course_ids and course.id not in reviewed_course_ids %}
+                    <a class="btn ghost" href="{{ url_for('submit_review', course_id=course.id) }}" style="margin-top: 8px;">📝 Leave a Review</a>
+                  {% elif course.id in reviewed_course_ids %}
+                    <span class="badge badge-success" style="margin-top: 8px; display: inline-block;">✅ Review Submitted</span>
+                  {% endif %}
+                {% elif data.requires_approval %}
+                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
+                    Not Accepted Yet
+                  </button>
+                {% else %}
+                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
+                    Not Bought Yet
+                  </button>
+                  <p class="sub" style="margin: 8px 0 0; color: #f59e0b; font-size: 0.9rem;">💳 Stripe integration coming soon</p>
+                {% endif %}
+              </footer>
+            </article>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if not standalone_courses and not year_1_courses and not year_2_courses %}
+      <div style="margin-top: 48px; text-align: center;">
+        <p class="sub">No courses are available at the moment. Please check back later.</p>
+      </div>
+    {% endif %}
   </div>
 </section>
+
+<style>
+.course-section {
+  border-top: 2px solid rgba(255, 255, 255, 0.1);
+  padding-top: 24px;
+}
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #e0e5ff;
+  margin-bottom: 8px;
+}
+
+.course-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.course-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.14);
+  color: #f3f4ff;
+}
+
+.badge-free {
+  background: #10b981;
+  color: white;
+}
+
+.badge-enrolled {
+  background: #10b981;
+  color: white;
+}
+
+.badge-price {
+  background: #f59e0b;
+  color: white;
+}
+
+.badge-warning {
+  background: #ef4444;
+  color: white;
+}
+
+.badge-success {
+  background: #10b981;
+  color: white;
+}
+
+.btn-danger {
+  background: #ef4444 !important;
+  color: white !important;
+}
+
+.progress-bar-container {
+  width: 100%;
+}
+
+.progress-bar-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a8b3d8;
+  margin-bottom: 6px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .section-title {
+    font-size: 1.25rem;
+  }
+}
+</style>
 {% endblock %}
-  

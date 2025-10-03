@@ -144,6 +144,8 @@ class Course(db.Model):
     order_index = db.Column(db.Integer, default=0)
     is_published = db.Column(db.Boolean, default=True)  # ✅ Changed to True by default for backward compatibility
     price = db.Column(db.Numeric(10, 2), nullable=True)  # nullable = free
+    show_on_homepage = db.Column(db.Boolean, default=False)  # ✅ Show course on homepage
+    course_assignment = db.Column(db.String(20), default='standalone')  # standalone, year_1, year_2
 
     # ✅ Future Stripe integration
     stripe_product_id = db.Column(db.String(100), nullable=True)
@@ -1095,11 +1097,11 @@ def admin_only(f):
 def index():
     public_qs = Question.query.filter_by(is_public=True).all()
 
-    # ✅ NEW: Only show published parent courses (no parent_id) on homepage
+    # ✅ NEW: Only show courses marked to display on homepage
     courses = Course.query.filter_by(
-        is_published=True,
-        parent_id=None
-    ).order_by(Course.order_index, Course.year, Course.name).all()
+        show_on_homepage=True,
+        is_published=True
+    ).order_by(Course.order_index, Course.name).all()
 
     # fetch approved testimonials for homepage
     testimonials = Testimonial.query.filter_by(status='approved').order_by(Testimonial.created_at.desc()).all()
@@ -2814,6 +2816,8 @@ def add_course():
     order_index = int(request.form.get("order_index", 0))
     # Default to True if checkbox not present (for backward compatibility)
     is_published = request.form.get("is_published", "on") == "on"
+    show_on_homepage = request.form.get("show_on_homepage") == "on"
+    course_assignment = request.form.get("course_assignment", "standalone")
     price = request.form.get("price")
 
     if not name:
@@ -2843,6 +2847,8 @@ def add_course():
         parent_id=parent_id,
         order_index=order_index,
         is_published=is_published,
+        show_on_homepage=show_on_homepage,
+        course_assignment=course_assignment,
         price=price
     )
     db.session.add(course)
@@ -2865,6 +2871,8 @@ def edit_course(course_id):
     parent_id = request.form.get("parent_id")
     course.order_index = int(request.form.get("order_index", 0))
     course.is_published = request.form.get("is_published") == "on"
+    course.show_on_homepage = request.form.get("show_on_homepage") == "on"
+    course.course_assignment = request.form.get("course_assignment", course.course_assignment or "standalone")
 
     # Handle price
     price = request.form.get("price")
@@ -3482,41 +3490,60 @@ def courses_dashboard():
     user = User.query.filter_by(username=session['user']).first()
     allowed_courses = user.get_courses()
 
-    # ✅ NEW: Get published parent courses with access control
-    all_parent_courses = Course.query.filter_by(
+    # ✅ Get published courses grouped by assignment
+    standalone_courses = Course.query.filter_by(
         is_published=True,
-        parent_id=None
-    ).order_by(Course.order_index, Course.year, Course.name).all()
+        parent_id=None,
+        course_assignment='standalone'
+    ).order_by(Course.order_index, Course.name).all()
 
-    # For backward compatibility with old courses list
-    year1_courses = [c for c in all_parent_courses if c.year == 1]
-    year2_courses = [c for c in all_parent_courses if c.year == 2]
+    year_1_courses = Course.query.filter_by(
+        is_published=True,
+        parent_id=None,
+        course_assignment='year_1'
+    ).order_by(Course.order_index, Course.name).all()
 
-    # Build course access data for template
-    course_access_data = {}
-    for course in all_parent_courses:
+    year_2_courses = Course.query.filter_by(
+        is_published=True,
+        parent_id=None,
+        course_assignment='year_2'
+    ).order_by(Course.order_index, Course.name).all()
+
+    # Helper function to calculate course progress
+    def get_course_data(course):
         has_access = course.user_has_access(user.id) or course.name in allowed_courses
-        course_access_data[course.id] = {
+        is_free = course.is_free()
+        requires_approval = False  # Can be extended later for approval-required courses
+
+        # Calculate progress if user has access
+        progress_percent = 0
+        is_started = False
+        if has_access or is_free:
+            progress_record = UserCourseProgress.query.filter_by(
+                user_id=user.id,
+                course_id=course.id
+            ).first()
+
+            if progress_record:
+                is_started = progress_record.progress > 0
+                # Calculate percentage: (lessons completed / total lessons) × 100
+                total_lessons = Lesson.query.filter_by(course_id=course.id).count()
+                if total_lessons > 0:
+                    progress_percent = int((progress_record.progress / total_lessons) * 100)
+
+        return {
+            'course': course,
             'has_access': has_access,
-            'is_free': course.is_free(),
-            'price': course.price,
-            'children': []
+            'is_free': is_free,
+            'requires_approval': requires_approval,
+            'is_started': is_started,
+            'progress_percent': progress_percent
         }
 
-        # Get published children (years and sub-courses)
-        children = Course.query.filter_by(
-            parent_id=course.id,
-            is_published=True
-        ).order_by(Course.order_index).all()
-
-        for child in children:
-            child_has_access = child.user_has_access(user.id) or has_access
-            course_access_data[course.id]['children'].append({
-                'course': child,
-                'has_access': child_has_access,
-                'is_free': child.is_free(),
-                'price': child.price
-            })
+    # Build course data for each group
+    standalone_data = [get_course_data(c) for c in standalone_courses]
+    year_1_data = [get_course_data(c) for c in year_1_courses]
+    year_2_data = [get_course_data(c) for c in year_2_courses]
 
     # Get finished courses for review button
     finished_course_ids = set()
@@ -3530,11 +3557,9 @@ def courses_dashboard():
     return render_template(
         "courses_dashboard.html",
         user=user,
-        courses=allowed_courses,
-        all_parent_courses=all_parent_courses,
-        year1_courses=year1_courses,
-        year2_courses=year2_courses,
-        course_access_data=course_access_data,
+        standalone_courses=standalone_data,
+        year_1_courses=year_1_data,
+        year_2_courses=year_2_data,
         finished_course_ids=finished_course_ids,
         reviewed_course_ids=reviewed_course_ids
     )

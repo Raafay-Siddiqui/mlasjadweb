@@ -25,7 +25,8 @@
       "Bash(python:*)",
       "Bash(pkill:*)",
       "Bash(lsof:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Bash(flask db:*)"
     ],
     "deny": [],
     "ask": []

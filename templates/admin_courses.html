@@ -75,6 +75,19 @@
           <span style="font-weight: normal;">Published (visible to students)</span>
         </label>
         <label>
+          <span>Homepage Display</span>
+          <input type="checkbox" name="show_on_homepage" style="width: auto; margin-right: 8px;">
+          <span style="font-weight: normal;">Show this course on homepage</span>
+        </label>
+        <label>
+          <span>Course Assignment (Dashboard Grouping)</span>
+          <select name="course_assignment">
+            <option value="standalone">Standalone Courses</option>
+            <option value="year_1">Year 1 Courses</option>
+            <option value="year_2">Year 2 Courses</option>
+          </select>
+        </label>
+        <label>
           <span>Description</span>
           <textarea name="description" rows="3" placeholder="Short description of the course"></textarea>
         </label>
@@ -221,6 +234,19 @@
                     <span>Publish Status</span>
                     <input type="checkbox" name="is_published" {% if course.is_published %}checked{% endif %} style="width: auto; margin-right: 8px;">
                     <span style="font-weight: normal;">Published (visible to students)</span>
+                  </label>
+                  <label>
+                    <span>Homepage Display</span>
+                    <input type="checkbox" name="show_on_homepage" {% if course.show_on_homepage %}checked{% endif %} style="width: auto; margin-right: 8px;">
+                    <span style="font-weight: normal;">Show this course on homepage</span>
+                  </label>
+                  <label>
+                    <span>Course Assignment (Dashboard Grouping)</span>
+                    <select name="course_assignment">
+                      <option value="standalone" {% if course.course_assignment == 'standalone' %}selected{% endif %}>Standalone Courses</option>
+                      <option value="year_1" {% if course.course_assignment == 'year_1' %}selected{% endif %}>Year 1 Courses</option>
+                      <option value="year_2" {% if course.course_assignment == 'year_2' %}selected{% endif %}>Year 2 Courses</option>
+                    </select>
                   </label>
                   <label>
                     <span>Description</span>
