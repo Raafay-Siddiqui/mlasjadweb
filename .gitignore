@@ -55,6 +55,7 @@ logs/
 
 # Uploads (optional - comment out if you want to track uploads)
 static/uploads/
+backups/
 
 # Testing
 .pytest_cache/

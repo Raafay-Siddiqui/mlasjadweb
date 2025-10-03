@@ -477,7 +477,6 @@
       <!-- Desktop Navigation -->
       <a href="{{ url_for('index') }}">Home</a>
       <a href="{{ url_for('index') }}#about">About</a>
-      <a href="{{ url_for('index') }}#hire">Hire</a>
       <a href="{{ url_for('index') }}#qa">Q&A</a>
 
       {% if session.get('user') %}
@@ -502,7 +501,6 @@
       <button class="mobile-nav-close" onclick="toggleMobileNav(false)" aria-label="Close navigation">✕</button>
       <a href="{{ url_for('index') }}">Home</a>
       <a href="{{ url_for('index') }}#about">About</a>
-      <a href="{{ url_for('index') }}#hire">Hire</a>
       <a href="{{ url_for('index') }}#qa">Q&A</a>
       
       {% if session.get('user') %}
