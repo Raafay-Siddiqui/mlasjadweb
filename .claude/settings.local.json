@@ -26,7 +26,21 @@
       "Bash(pkill:*)",
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
-      "Bash(flask db:*)"
+      "Bash(flask db:*)",
+      "Bash(grep:*)",
+      "Bash(./verify_security.sh)",
+      "Bash(git grep:*)",
+      "Bash(pip3 install:*)",
+      "Bash(git add:*)",
+      "Bash(./upload_courses.sh:*)",
+      "Bash(cat:*)",
+      "Bash(awk:*)",
+      "Bash(./venv/bin/pip list)",
+      "Bash(./venv/bin/pip install psycopg2-binary)",
+      "Bash(./venv/bin/python:*)",
+      "Bash(./venv/bin/flask run --port 5005 --host 0.0.0.0)",
+      "Bash(curl:*)",
+      "Bash(PGPASSWORD=\"AlBaqiAcademyGRE\" psql -h db.yhladodtavcoawfhpeaa.supabase.co -p 5432 -U postgres -d postgres -c \"SELECT COUNT(*) as users FROM \"\"user\"\";\" -c \"SELECT id, username, email, role FROM \"\"user\"\" LIMIT 3;\")"
     ],
     "deny": [],
     "ask": []

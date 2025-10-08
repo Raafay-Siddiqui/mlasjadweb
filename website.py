@@ -3,6 +3,8 @@ from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_migrate import Migrate
+from flask_mail import Mail, Message as MailMessage
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from datetime import datetime, timedelta, timezone
 import os
 import json
@@ -52,6 +54,10 @@ app.config['SESSION_TYPE'] = 'filesystem'
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 migrate = Migrate(app, db)  # ✅ NEW
+mail = Mail(app)  # ✅ Flask-Mail for password reset emails
+
+# Initialize password reset token serializer
+serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 
 # -------------------- User Model -------------------- #
 # -------------------- User Model -------------------- #
@@ -66,6 +72,14 @@ class User(db.Model):
     role = db.Column(db.String(20), default="user")
     created_at = db.Column(db.DateTime, default=utcnow)
     last_login = db.Column(db.DateTime)
+
+    # Password reset fields
+    reset_token = db.Column(db.String(200), nullable=True)
+    reset_token_expiry = db.Column(db.DateTime, nullable=True)
+
+    # Terms of Service acceptance
+    accepted_terms = db.Column(db.Boolean, default=False, nullable=False)
+    terms_accepted_at = db.Column(db.DateTime, nullable=True)
 
     # ✅ Courses allowed (comma-separated list for now)
     courses = db.Column(db.String(500), default="seerah,arabic")
@@ -246,6 +260,7 @@ class Lesson(db.Model):
     title = db.Column(db.String(200), nullable=False)
     video_file = db.Column(db.String(300))
     ppt_file = db.Column(db.String(300))
+    description = db.Column(db.Text, nullable=True)
 
     course_id = db.Column(db.Integer, db.ForeignKey("course.id"), nullable=False)
 
@@ -405,7 +420,9 @@ class CourseAccess(db.Model):
 
     # Access metadata
     granted_at = db.Column(db.DateTime, default=utcnow)
-    access_type = db.Column(db.String(20), default='free')  # free, purchased, admin_grant, parent_unlock
+    access_type = db.Column(db.String(20), default='free')  # free, purchased, admin_grant, parent_unlock, subscription
+    is_locked = db.Column(db.Boolean, default=False)  # For subscription data retention
+    progress = db.Column(db.Float, default=0.0)  # Track progress for data retention
 
     # Future Stripe payment tracking
     stripe_payment_intent_id = db.Column(db.String(100), nullable=True)
@@ -414,6 +431,73 @@ class CourseAccess(db.Model):
     __table_args__ = (
         db.UniqueConstraint('user_id', 'course_id', name='uq_user_course_access'),
     )
+
+
+class SubscriptionPlan(db.Model):
+    """
+    Defines monthly subscription plans that bundle multiple courses.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    price = db.Column(db.Numeric(10, 2), nullable=False)
+    billing_interval = db.Column(db.String(20), default="monthly")  # monthly, yearly
+    description = db.Column(db.Text)
+    course_ids = db.Column(db.JSON)  # List of course IDs included in the plan
+    is_active = db.Column(db.Boolean, default=True)
+    stripe_price_id = db.Column(db.String(120))
+    stripe_product_id = db.Column(db.String(120))
+    trial_days = db.Column(db.Integer, default=7)  # 7-day free trial by default
+    grace_period_days = db.Column(db.Integer, default=3)  # 3-day grace after failed payment
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    # Relationships
+    subscriptions = db.relationship(
+        'UserSubscription',
+        backref='plan',
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
+
+    def get_courses(self):
+        """Get all Course objects included in this plan"""
+        if not self.course_ids:
+            return []
+        return Course.query.filter(Course.id.in_(self.course_ids)).all()
+
+
+class UserSubscription(db.Model):
+    """
+    Tracks individual user subscriptions to plans.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    plan_id = db.Column(db.Integer, db.ForeignKey('subscription_plan.id'), nullable=False)
+    stripe_subscription_id = db.Column(db.String(120))
+    stripe_customer_id = db.Column(db.String(120))
+    status = db.Column(db.String(50))  # active, trialing, past_due, canceled, incomplete, incomplete_expired
+    start_date = db.Column(db.DateTime, default=utcnow)
+    end_date = db.Column(db.DateTime)
+    current_period_start = db.Column(db.DateTime)
+    current_period_end = db.Column(db.DateTime)
+    cancel_at_period_end = db.Column(db.Boolean, default=False)
+    canceled_at = db.Column(db.DateTime)
+    trial_start = db.Column(db.DateTime)
+    trial_end = db.Column(db.DateTime)
+
+    # Payment tracking
+    last_payment_date = db.Column(db.DateTime)
+    last_payment_amount = db.Column(db.Numeric(10, 2))
+
+    # Relationships
+    user = db.relationship('User', backref=db.backref('subscriptions', lazy=True))
+
+    def is_active(self):
+        """Check if subscription is currently active (including trial and grace period)"""
+        return self.status in ['active', 'trialing', 'past_due']
+
+    def in_grace_period(self):
+        """Check if subscription is in grace period after failed payment"""
+        return self.status == 'past_due'
 
 
 class StudentHubFile(db.Model):
@@ -494,6 +578,26 @@ class Testimonial(db.Model):
     __table_args__ = (
         db.UniqueConstraint('user_id', 'course_id', name='uq_user_course_testimonial'),
     )
+
+
+class SentEmail(db.Model):
+    """Log of all emails sent by the system."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    subject = db.Column(db.String(200), nullable=False)
+    sent_at = db.Column(db.DateTime, default=utcnow)
+    status = db.Column(db.String(20), default='sent')  # sent, failed
+
+    # Relationship
+    user = db.relationship('User', backref='sent_emails')
+
+
+class SiteSetting(db.Model):
+    """Stores site-wide settings like Terms of Service, Privacy Policy, etc."""
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.Text, nullable=True)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
 
 def _student_hub_file_path(file_record: StudentHubFile) -> str:
@@ -1047,12 +1151,12 @@ def _build_quiz_from_text(raw_text: str, requested: int = 3):
     # -------------------- Q&A Chat Models -------------------- #
 class Question(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
     title = db.Column(db.String(200), nullable=False)
     is_public = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
-    user = db.relationship("User", backref="questions")  # ✅ Add this
+    user = db.relationship("User", backref=db.backref("questions", cascade="all, delete-orphan"))
     messages = db.relationship("Message", backref="question", lazy=True, cascade="all, delete-orphan")
 
 
@@ -1063,6 +1167,112 @@ class Message(db.Model):
     sender = db.Column(db.String(50))   # "user" or "admin"
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+
+# -------------------- Subscription Helper Functions -------------------- #
+def grant_course_access(user_id, course, *, access_type='purchased', amount_paid=None, payment_intent_id=None):
+    """Grant access to a course and all published children."""
+
+    def _grant(target, record_type, record_amount, record_payment):
+        existing_access = CourseAccess.query.filter_by(
+            user_id=user_id,
+            course_id=target.id
+        ).first()
+
+        if existing_access:
+            existing_access.is_locked = False
+            if record_type:
+                existing_access.access_type = record_type
+            if record_payment:
+                existing_access.stripe_payment_intent_id = record_payment
+            if record_amount is not None:
+                existing_access.amount_paid = record_amount
+        else:
+            db.session.add(CourseAccess(
+                user_id=user_id,
+                course_id=target.id,
+                access_type=record_type or 'purchased',
+                is_locked=False,
+                amount_paid=record_amount,
+                stripe_payment_intent_id=record_payment
+            ))
+
+        for child in target.children:
+            if child.is_published:
+                _grant(child, 'parent_unlock', None, None)
+
+    _grant(course, access_type, amount_paid, payment_intent_id)
+
+
+def grant_subscription_access(user_id, course_ids):
+    """
+    Grant subscription access to multiple courses for a user.
+    Creates CourseAccess records with subscription type.
+    """
+    for course_id in course_ids:
+        course = Course.query.get(course_id)
+        if course:
+            grant_course_access(user_id, course, access_type='subscription')
+
+
+def revoke_subscription_access(user_id, course_ids, keep_progress=True):
+    """
+    Revoke subscription access to courses.
+    If keep_progress is True, locks access but retains data.
+    If False, removes access entirely.
+    """
+    for course_id in course_ids:
+        access = CourseAccess.query.filter_by(
+            user_id=user_id,
+            course_id=course_id,
+            access_type='subscription'
+        ).first()
+
+        if access:
+            if keep_progress:
+                access.is_locked = True
+            else:
+                db.session.delete(access)
+
+
+def unlock_subscription_courses(user_id, course_ids):
+    """
+    Unlock previously locked subscription courses (e.g., after payment recovery).
+    """
+    for course_id in course_ids:
+        access = CourseAccess.query.filter_by(
+            user_id=user_id,
+            course_id=course_id
+        ).first()
+
+        if access:
+            access.is_locked = False
+
+
+def user_has_active_subscription(user_id):
+    """
+    Check if user has any active subscription.
+    """
+    active_sub = UserSubscription.query.filter_by(
+        user_id=user_id
+    ).filter(
+        UserSubscription.status.in_(['active', 'trialing', 'past_due'])
+    ).first()
+
+    return active_sub is not None
+
+
+def get_user_active_subscription(user_id):
+    """
+    Get user's active subscription (if any).
+    Returns UserSubscription object or None.
+    """
+    return UserSubscription.query.filter_by(
+        user_id=user_id
+    ).filter(
+        UserSubscription.status.in_(['active', 'trialing', 'past_due'])
+    ).first()
+
 
 # -------------------- Session Decorators -------------------- #
 def login_required(f):
@@ -1106,7 +1316,21 @@ def index():
     # fetch approved testimonials for homepage
     testimonials = Testimonial.query.filter_by(status='approved').order_by(Testimonial.created_at.desc()).all()
 
-    return render_template('index.html', public_qs=public_qs, courses=courses, testimonials=testimonials)
+    # Get current user if logged in
+    current_user = None
+    if 'user' in session:
+        current_user = User.query.filter_by(username=session['user']).first()
+
+    return render_template('index.html', public_qs=public_qs, courses=courses, testimonials=testimonials, current_user=current_user)
+
+
+# -------------------- Terms of Service -------------------- #
+@app.route('/terms')
+def terms():
+    """Display Terms of Service page."""
+    terms_setting = SiteSetting.query.filter_by(key='terms_of_service').first()
+    terms_content = terms_setting.value if terms_setting else "Terms of Service not yet configured."
+    return render_template('terms.html', terms_content=terms_content)
 
 
 # -------------------- Registration -------------------- #
@@ -1131,6 +1355,12 @@ def register():
         phone_number = request.form.get('phone_number')
         email = request.form.get('email')
 
+        # Validate Terms of Service acceptance
+        accept_terms = request.form.get('accept_terms')
+        if not accept_terms:
+            flash("You must accept the Terms of Service to register.")
+            return redirect(url_for('register'))
+
         # Check if username or email already exists
         if User.query.filter((User.username == username) | (User.email == email)).first():
             flash("Account already exists!")
@@ -1144,10 +1374,20 @@ def register():
             age=age,
             phone_number=phone_number,
             email=email,
-            role="user"
+            role="user",
+            accepted_terms=True,
+            terms_accepted_at=datetime.now(timezone.utc)
         )
         db.session.add(new_user)
         db.session.commit()
+
+        # Send welcome email
+        try:
+            from email_utils import send_welcome_email
+            send_welcome_email(new_user)
+        except Exception as e:
+            # Log error but don't block registration
+            print(f"Failed to send welcome email: {e}")
 
         flash("Registration successful! You can now log in.")
         return redirect(url_for('login'))
@@ -1162,10 +1402,13 @@ def login():
         return render_template("log_in.html")
 
     # POST login logic
-    username = request.form['username'].strip().lower()
+    username_or_email = request.form['username'].strip().lower()
     password = request.form['password']
 
-    user = User.query.filter_by(username=username).first()
+    # Check if login is email or username
+    user = User.query.filter(
+        or_(User.username == username_or_email, User.email == username_or_email)
+    ).first()
 
     if user and bcrypt.check_password_hash(user.password, password):
         user.last_login = datetime.now(timezone.utc)
@@ -1180,7 +1423,7 @@ def login():
         else:
             return redirect(url_for('index'))
     else:
-        flash("Invalid Username or Password")
+        flash("Invalid Username/Email or Password")
         return redirect(url_for('login'))
 # -------------------- Logout -------------------- #
 @app.route('/logout')
@@ -1188,7 +1431,115 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-        
+
+# -------------------- Password Reset -------------------- #
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Request password reset - sends email with reset link"""
+    if request.method == 'GET':
+        return render_template('forgot_password.html')
+
+    # POST: Process password reset request
+    email = request.form.get('email', '').strip().lower()
+
+    if not email:
+        flash('Please enter your email address', 'error')
+        return redirect(url_for('forgot_password'))
+
+    # Find user by email
+    user = User.query.filter_by(email=email).first()
+
+    if user:
+        # Generate secure token (expires in 1 hour)
+        token = serializer.dumps(email, salt='password-reset-salt')
+
+        # Store token and expiry in database (additional security layer)
+        user.reset_token = token
+        user.reset_token_expiry = datetime.now() + timedelta(hours=1)
+        db.session.commit()
+
+        # Send password reset email using new email utility
+        try:
+            from email_utils import send_password_reset_email
+            send_password_reset_email(user, token)
+            flash('Password reset instructions have been sent to your email address. Please check your inbox.', 'success')
+
+        except Exception as e:
+            print(f"Error sending email: {e}")
+            flash('An error occurred while sending the reset email. Please try again later.', 'error')
+            return redirect(url_for('forgot_password'))
+    else:
+        # Don't reveal if email exists (security best practice)
+        # Show same message whether email exists or not
+        flash('If an account with that email exists, password reset instructions have been sent.', 'info')
+
+    return redirect(url_for('login'))
+
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Reset password using token from email"""
+
+    # Verify token is valid and not expired (itsdangerous check)
+    try:
+        email = serializer.loads(token, salt='password-reset-salt', max_age=3600)  # 1 hour expiry
+    except SignatureExpired:
+        flash('This password reset link has expired. Please request a new one.', 'error')
+        return redirect(url_for('forgot_password'))
+    except BadSignature:
+        flash('Invalid password reset link. Please request a new one.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    # Find user and verify database token matches (prevent token reuse)
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        flash('Invalid password reset link.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    # Check if token matches and hasn't expired in database
+    if user.reset_token != token:
+        flash('This password reset link has already been used. Please request a new one.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    if user.reset_token_expiry and user.reset_token_expiry < datetime.now():
+        flash('This password reset link has expired. Please request a new one.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    # GET: Show password reset form
+    if request.method == 'GET':
+        return render_template('reset_password.html', token=token, email=email)
+
+    # POST: Process new password
+    new_password = request.form.get('password', '').strip()
+    confirm_password = request.form.get('confirm_password', '').strip()
+
+    # Validation
+    if not new_password or not confirm_password:
+        flash('Please fill in all fields', 'error')
+        return render_template('reset_password.html', token=token, email=email)
+
+    if new_password != confirm_password:
+        flash('Passwords do not match', 'error')
+        return render_template('reset_password.html', token=token, email=email)
+
+    if len(new_password) < 6:
+        flash('Password must be at least 6 characters long', 'error')
+        return render_template('reset_password.html', token=token, email=email)
+
+    # Hash new password
+    hashed_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
+
+    # Update user password and invalidate token
+    user.password = hashed_password
+    user.reset_token = None  # Invalidate token to prevent reuse
+    user.reset_token_expiry = None
+    db.session.commit()
+
+    flash('Your password has been successfully reset. You can now log in with your new password.', 'success')
+    return redirect(url_for('login'))
+
+
 # -------------------- Success Pages -------------------- #
 @app.route('/user_success')
 @login_required
@@ -1222,6 +1573,7 @@ def edit_lesson(lesson_id):
     if request.method == "POST":
         lesson.title = request.form.get("title")
         lesson.week = int(request.form.get("week"))
+        lesson.description = request.form.get("description")
         # handle replacing files if uploaded again
         video_file = request.files.get("video_file")
         ppt_file = request.files.get("ppt_file")
@@ -1284,6 +1636,7 @@ def upload_course_file():
     year = int(request.form.get("year"))
     week = int(request.form.get("week"))
     title = request.form.get("title")
+    description = request.form.get("description")
 
     video_file = request.files.get("video_file")
     ppt_file = request.files.get("ppt_file")
@@ -1304,9 +1657,10 @@ def upload_course_file():
     # ✅ Find or create lesson
     lesson = Lesson.query.filter_by(course_id=course.id, week=week).first()
     if not lesson:
-        lesson = Lesson(week=week, title=title, course_id=course.id)
+        lesson = Lesson(week=week, title=title, description=description, course_id=course.id)
     else:
         lesson.title = title or lesson.title
+        lesson.description = description if description is not None else lesson.description
 
     # ✅ Save uploaded files
     folder = os.path.join("static", "courses", course_name, f"year{year}")
@@ -1841,6 +2195,134 @@ def admin_users():
     users = User.query.order_by(User.id).all()
     courses = Course.query.order_by(Course.year, Course.name).all()
     return render_template("admin_users.html", users=users, courses=courses)
+
+
+@app.route('/admin/email', methods=['GET', 'POST'])
+@login_required
+@admin_only
+def admin_email():
+    """Admin bulk email sending interface"""
+    if request.method == 'GET':
+        users = User.query.order_by(User.username).all()
+        courses = Course.query.order_by(Course.name).all()
+        return render_template('admin_email.html', users=users, courses=courses)
+
+    # POST: Send bulk email
+    subject = request.form.get('subject', '').strip()
+    message_html = request.form.get('message', '').strip()
+    recipient_type = request.form.get('recipient_type', 'selected')
+
+    if not subject or not message_html:
+        flash('Subject and message are required', 'error')
+        return redirect(url_for('admin_email'))
+
+    # Collect recipients based on selection
+    recipients = []
+
+    if recipient_type == 'all':
+        recipients = User.query.all()
+    elif recipient_type == 'course':
+        course_name = request.form.get('course_filter', '').strip().lower()
+        if course_name:
+            recipients = User.query.filter(
+                func.lower(User.courses).like(f'%{course_name}%')
+            ).all()
+    elif recipient_type == 'selected':
+        user_ids = request.form.getlist('user_ids[]')
+        if user_ids:
+            recipients = User.query.filter(User.id.in_(user_ids)).all()
+
+    if not recipients:
+        flash('No recipients selected', 'error')
+        return redirect(url_for('admin_email'))
+
+    # Wrap message in base email template
+    from flask import render_template_string
+    html_body = render_template('emails/base_email.html')
+    # Replace the content block with custom message
+    html_body = html_body.replace('{% block content %}', '').replace('{% endblock %}', message_html)
+
+    # Send emails
+    from email_utils import send_bulk_email
+    recipient_emails = [user.email for user in recipients if user.email]
+
+    success_count = send_bulk_email(
+        recipients=recipient_emails,
+        subject=subject,
+        html_body=message_html,
+        text_body=None
+    )
+
+    flash(f'Successfully queued {success_count} emails out of {len(recipient_emails)} recipients', 'success')
+    return redirect(url_for('admin_email'))
+
+
+@app.route('/admin/test-email', methods=['GET', 'POST'])
+@login_required
+@admin_only
+def admin_test_email():
+    """Send test email to admin"""
+    if request.method == 'GET':
+        admin_user = User.query.filter_by(username=session['user']).first()
+        return render_template('admin_test_email.html', admin_email=admin_user.email if admin_user else '')
+
+    # POST: Send test email
+    test_email = request.form.get('email', '').strip()
+
+    if not test_email:
+        flash('Email address is required', 'error')
+        return redirect(url_for('admin_test_email'))
+
+    from email_utils import send_email
+
+    html_body = render_template('emails/base_email.html').replace(
+        '{% block content %}',
+        '<h2>Test Email</h2><p>This is a test email from Al-Baqi Academy email system.</p><p>If you received this, your email configuration is working correctly!</p>'
+    ).replace('{% endblock %}', '')
+
+    success = send_email(
+        to=test_email,
+        subject='Test Email - Al-Baqi Academy',
+        html_body=html_body,
+        async_send=False
+    )
+
+    if success:
+        flash(f'Test email sent to {test_email}', 'success')
+    else:
+        flash('Failed to send test email. Check server logs.', 'error')
+
+    return redirect(url_for('admin_test_email'))
+
+
+@app.route('/admin/terms', methods=['GET', 'POST'])
+@login_required
+@admin_only
+def admin_terms():
+    """Admin interface to edit Terms of Service"""
+    if request.method == 'GET':
+        terms_setting = SiteSetting.query.filter_by(key='terms_of_service').first()
+        terms_content = terms_setting.value if terms_setting else ""
+        return render_template('admin_terms.html', terms_content=terms_content)
+
+    # POST: Save updated terms
+    new_terms = request.form.get('terms_content', '').strip()
+
+    terms_setting = SiteSetting.query.filter_by(key='terms_of_service').first()
+    if terms_setting:
+        terms_setting.value = new_terms
+        terms_setting.updated_at = datetime.now(timezone.utc)
+    else:
+        terms_setting = SiteSetting(
+            key='terms_of_service',
+            value=new_terms,
+            updated_at=datetime.now(timezone.utc)
+        )
+        db.session.add(terms_setting)
+
+    db.session.commit()
+    flash('Terms of Service updated successfully!', 'success')
+    return redirect(url_for('admin_terms'))
 
 
 @app.route('/admin/users/<int:user_id>/tracking')
@@ -2464,6 +2946,187 @@ def mark_course_finished(user_id, course_id):
     return redirect(url_for('admin_user_tracking', user_id=user_id))
 
 
+# -------------------- Admin Subscription Management Routes -------------------- #
+@app.route('/admin/subscriptions')
+@login_required
+@admin_only
+def admin_subscriptions():
+    """
+    Admin view for managing subscription plans and subscribers.
+    """
+    plans = SubscriptionPlan.query.all()
+    all_courses = Course.query.filter_by(is_published=True).order_by(Course.name).all()
+
+    # Get all active subscriptions with user and plan data
+    active_subs = db.session.query(UserSubscription, User, SubscriptionPlan).join(
+        User, UserSubscription.user_id == User.id
+    ).join(
+        SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id
+    ).filter(
+        UserSubscription.status.in_(['active', 'trialing', 'past_due'])
+    ).all()
+
+    return render_template(
+        'admin_subscriptions.html',
+        plans=plans,
+        all_courses=all_courses,
+        active_subscriptions=active_subs
+    )
+
+
+@app.route('/admin/subscriptions/plan/create', methods=['POST'])
+@login_required
+@admin_only
+def create_subscription_plan():
+    """
+    Create a new subscription plan.
+    """
+    from stripe_helpers import sync_plan_with_stripe
+
+    name = request.form.get('name')
+    price = request.form.get('price')
+    description = request.form.get('description')
+    billing_interval = request.form.get('billing_interval', 'monthly')
+    trial_days = request.form.get('trial_days', 7)
+    grace_period_days = request.form.get('grace_period_days', 3)
+    course_ids = request.form.getlist('course_ids[]')
+
+    if not name or not price:
+        flash("⚠️ Name and price are required.")
+        return redirect(url_for('admin_subscriptions'))
+
+    try:
+        # Convert course_ids to integers
+        course_ids = [int(cid) for cid in course_ids if cid]
+
+        plan = SubscriptionPlan(
+            name=name,
+            price=float(price),
+            description=description,
+            billing_interval=billing_interval,
+            course_ids=course_ids,
+            trial_days=int(trial_days),
+            grace_period_days=int(grace_period_days),
+            is_active=True
+        )
+        db.session.add(plan)
+        db.session.commit()
+
+        # Sync with Stripe
+        product_id, price_id = sync_plan_with_stripe(plan)
+        plan.stripe_product_id = product_id
+        plan.stripe_price_id = price_id
+        db.session.commit()
+
+        flash(f"✅ Subscription plan '{name}' created successfully.")
+
+    except Exception as e:
+        app.logger.error(f"Failed to create subscription plan: {e}")
+        flash(f"⚠️ Error creating plan: {e}")
+        db.session.rollback()
+
+    return redirect(url_for('admin_subscriptions'))
+
+
+@app.route('/admin/subscriptions/plan/<int:plan_id>/edit', methods=['POST'])
+@login_required
+@admin_only
+def edit_subscription_plan(plan_id):
+    """
+    Edit an existing subscription plan.
+    """
+    from stripe_helpers import sync_plan_with_stripe
+
+    plan = SubscriptionPlan.query.get_or_404(plan_id)
+
+    plan.name = request.form.get('name', plan.name)
+    plan.description = request.form.get('description', plan.description)
+    plan.trial_days = int(request.form.get('trial_days', plan.trial_days))
+    plan.grace_period_days = int(request.form.get('grace_period_days', plan.grace_period_days))
+
+    course_ids = request.form.getlist('course_ids[]')
+    if course_ids:
+        plan.course_ids = [int(cid) for cid in course_ids if cid]
+
+    # Check if price changed
+    new_price = float(request.form.get('price', plan.price))
+    price_changed = new_price != float(plan.price)
+
+    if price_changed:
+        plan.price = new_price
+
+    try:
+        db.session.commit()
+
+        # Re-sync with Stripe if price changed
+        if price_changed:
+            product_id, price_id = sync_plan_with_stripe(plan)
+            plan.stripe_product_id = product_id
+            plan.stripe_price_id = price_id
+            db.session.commit()
+
+        flash(f"✅ Plan '{plan.name}' updated successfully.")
+
+    except Exception as e:
+        app.logger.error(f"Failed to update subscription plan: {e}")
+        flash(f"⚠️ Error updating plan: {e}")
+        db.session.rollback()
+
+    return redirect(url_for('admin_subscriptions'))
+
+
+@app.route('/admin/subscriptions/plan/<int:plan_id>/toggle', methods=['POST'])
+@login_required
+@admin_only
+def toggle_subscription_plan(plan_id):
+    """
+    Activate or deactivate a subscription plan.
+    """
+    plan = SubscriptionPlan.query.get_or_404(plan_id)
+    plan.is_active = not plan.is_active
+
+    try:
+        db.session.commit()
+        status = "activated" if plan.is_active else "deactivated"
+        flash(f"✅ Plan '{plan.name}' {status}.")
+    except Exception as e:
+        app.logger.error(f"Failed to toggle plan: {e}")
+        flash(f"⚠️ Error: {e}")
+        db.session.rollback()
+
+    return redirect(url_for('admin_subscriptions'))
+
+
+@app.route('/admin/subscriptions/plan/<int:plan_id>/delete', methods=['POST'])
+@login_required
+@admin_only
+def delete_subscription_plan(plan_id):
+    """
+    Delete a subscription plan (only if no active subscriptions).
+    """
+    plan = SubscriptionPlan.query.get_or_404(plan_id)
+
+    # Check for active subscriptions
+    active_subs = UserSubscription.query.filter_by(plan_id=plan_id).filter(
+        UserSubscription.status.in_(['active', 'trialing', 'past_due'])
+    ).count()
+
+    if active_subs > 0:
+        flash(f"⚠️ Cannot delete plan with {active_subs} active subscriptions. Deactivate it instead.")
+        return redirect(url_for('admin_subscriptions'))
+
+    try:
+        db.session.delete(plan)
+        db.session.commit()
+        flash(f"✅ Plan '{plan.name}' deleted.")
+    except Exception as e:
+        app.logger.error(f"Failed to delete plan: {e}")
+        flash(f"⚠️ Error: {e}")
+        db.session.rollback()
+
+    return redirect(url_for('admin_subscriptions'))
+
+
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
@@ -2895,14 +3558,48 @@ def edit_course(course_id):
     return redirect(url_for('manage_courses'))
 
 
+@app.route('/admin/course/<int:course_id>/sync-stripe', methods=['POST'])
+@login_required
+@admin_only
+def sync_course_stripe(course_id):
+    """Sync a course with Stripe (create/update product and price)"""
+    from stripe_helpers import sync_course_with_stripe
+
+    course = Course.query.get_or_404(course_id)
+
+    if not course.price or course.price <= 0:
+        flash("⚠️ Cannot sync free courses with Stripe. Set a price first.")
+        return redirect(url_for('manage_courses'))
+
+    try:
+        product_id, price_id = sync_course_with_stripe(course)
+        course.stripe_product_id = product_id
+        course.stripe_price_id = price_id
+        db.session.commit()
+        flash(f"✅ Course '{course.name}' synced with Stripe successfully!")
+    except Exception as e:
+        app.logger.error(f"Failed to sync course {course_id} with Stripe: {e}")
+        flash(f"⚠️ Failed to sync with Stripe: {str(e)}")
+
+    return redirect(url_for('manage_courses'))
+
+
 # -------------------- Course Access Decorator -------------------- #
 def course_required(course_name):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             user = User.query.filter_by(username=session['user']).first()
-            if course_name not in user.get_courses():
-                flash("⚠️ You don’t have access to this course.")
+
+            # Check access via new hierarchy system or legacy system
+            course = Course.query.filter_by(name=course_name).first()
+            if course:
+                has_access = course.user_has_access(user.id) or course_name in user.get_courses()
+            else:
+                has_access = course_name in user.get_courses()
+
+            if not has_access and user.role != 'admin':
+                flash("⚠️ You don't have access to this course.")
                 return redirect(url_for('courses_dashboard'))
             return f(*args, **kwargs)
         return decorated_function
@@ -2917,9 +3614,10 @@ def submit_quiz(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     course = lesson.course  # get related course
 
-    # 🔒 Ensure user has access to this course
-    if course.name not in user.get_courses():
-        flash("⚠️ You don’t have access to this course.")
+    # 🔒 Ensure user has access to this course (check both new hierarchy system and legacy)
+    has_access = course.user_has_access(user.id) or course.name in user.get_courses()
+    if not has_access and user.role != 'admin':
+        flash("⚠️ You don't have access to this course.")
         return redirect(url_for('courses_dashboard'))
 
     # ✅ Mark answers
@@ -3082,12 +3780,9 @@ def accept_course_agreement(course_name, year):
     user = User.query.filter_by(username=session['user']).first()
     course = Course.query.filter_by(name=course_name, year=year).first_or_404()
 
-    allowed_course_names = {
-        name.strip().lower()
-        for name in user.get_courses()
-        if name and name.strip()
-    }
-    if user.role != 'admin' and course.name.strip().lower() not in allowed_course_names:
+    # Check access via new hierarchy system or legacy system
+    has_access = course.user_has_access(user.id) or course.name in user.get_courses()
+    if user.role != 'admin' and not has_access:
         return jsonify({"accepted": False, "message": "Access denied."}), 403
 
     existing = CourseAgreement.query.filter_by(user_id=user.id, course_id=course.id).first()
@@ -3108,12 +3803,11 @@ def course_quiz_retake(course_id):
     user = User.query.filter_by(username=session['user']).first()
     course = Course.query.get_or_404(course_id)
 
-    allowed_courses_raw = {name.strip() for name in user.get_courses() if name}
-    allowed_courses_lower = {name.lower() for name in allowed_courses_raw}
-    course_key = course.name.strip().lower()
-    has_access = course.name in allowed_courses_raw or course_key in allowed_courses_lower
+    # Check access via new hierarchy system or legacy system
+    has_access = course.user_has_access(user.id) or course.name in user.get_courses()
 
     if not has_access:
+        # Fallback: check if user has progress record (legacy support)
         progress_record = UserCourseProgress.query.filter_by(
             user_id=user.id,
             course_id=course.id
@@ -3491,24 +4185,6 @@ def courses_dashboard():
     allowed_courses = user.get_courses()
 
     # ✅ Get published courses grouped by assignment
-    standalone_courses = Course.query.filter_by(
-        is_published=True,
-        parent_id=None,
-        course_assignment='standalone'
-    ).order_by(Course.order_index, Course.name).all()
-
-    year_1_courses = Course.query.filter_by(
-        is_published=True,
-        parent_id=None,
-        course_assignment='year_1'
-    ).order_by(Course.order_index, Course.name).all()
-
-    year_2_courses = Course.query.filter_by(
-        is_published=True,
-        parent_id=None,
-        course_assignment='year_2'
-    ).order_by(Course.order_index, Course.name).all()
-
     # Helper function to calculate course progress
     def get_course_data(course):
         has_access = course.user_has_access(user.id) or course.name in allowed_courses
@@ -3518,6 +4194,7 @@ def courses_dashboard():
         # Calculate progress if user has access
         progress_percent = 0
         is_started = False
+        progress_record = None
         if has_access or is_free:
             progress_record = UserCourseProgress.query.filter_by(
                 user_id=user.id,
@@ -3537,13 +4214,49 @@ def courses_dashboard():
             'is_free': is_free,
             'requires_approval': requires_approval,
             'is_started': is_started,
-            'progress_percent': progress_percent
+            'progress_percent': progress_percent,
+            'is_child': course.parent_id is not None,
+            'children': []
         }
 
-    # Build course data for each group
-    standalone_data = [get_course_data(c) for c in standalone_courses]
-    year_1_data = [get_course_data(c) for c in year_1_courses]
-    year_2_data = [get_course_data(c) for c in year_2_courses]
+    def build_course_payload(course):
+        payload = get_course_data(course)
+        if course.children:
+            child_payloads = []
+            for child in sorted(
+                (c for c in course.children if c.is_published),
+                key=lambda c: (c.order_index, c.name.lower())
+            ):
+                child_payloads.append(get_course_data(child))
+            payload['children'] = child_payloads
+        return payload
+
+    standalone_courses = [
+        build_course_payload(course)
+        for course in Course.query.filter_by(
+            is_published=True,
+            parent_id=None,
+            course_assignment='standalone'
+        ).order_by(Course.order_index, Course.name).all()
+    ]
+
+    year_1_courses = [
+        build_course_payload(course)
+        for course in Course.query.filter_by(
+            is_published=True,
+            parent_id=None,
+            course_assignment='year_1'
+        ).order_by(Course.order_index, Course.name).all()
+    ]
+
+    year_2_courses = [
+        build_course_payload(course)
+        for course in Course.query.filter_by(
+            is_published=True,
+            parent_id=None,
+            course_assignment='year_2'
+        ).order_by(Course.order_index, Course.name).all()
+    ]
 
     # Get finished courses for review button
     finished_course_ids = set()
@@ -3557,9 +4270,9 @@ def courses_dashboard():
     return render_template(
         "courses_dashboard.html",
         user=user,
-        standalone_courses=standalone_data,
-        year_1_courses=year_1_data,
-        year_2_courses=year_2_data,
+        standalone_courses=standalone_courses,
+        year_1_courses=year_1_courses,
+        year_2_courses=year_2_courses,
         finished_course_ids=finished_course_ids,
         reviewed_course_ids=reviewed_course_ids
     )
@@ -3681,7 +4394,9 @@ def _assert_exam_permissions(user: User, course: Course | None, exam: 'Exam') ->
     if exam.course_id:
         if not course:
             abort(404)
-        if course.name not in user.get_courses():
+        # Check access via new hierarchy system or legacy system
+        has_access = course.user_has_access(user.id) or course.name in user.get_courses()
+        if not has_access:
             abort(403)
     else:
         # Standalone exams default to paid or admin users
@@ -3940,14 +4655,46 @@ def course_page(course_name, year):
     # Find course & lessons
     course = Course.query.filter_by(name=course_name, year=year).first_or_404()
 
+    allowed_courses = set(user.get_courses())
+
     # ✅ NEW: Check access via new hierarchy system or legacy system
-    has_access = course.user_has_access(user.id) or course_name in user.get_courses()
+    has_access = course.user_has_access(user.id) or course_name in allowed_courses
 
     if not has_access and user.role != 'admin':
         flash("⚠️ You don't have access to this course.")
         return redirect(url_for('courses_dashboard'))
 
     lessons = Lesson.query.filter_by(course_id=course.id).order_by(Lesson.week).all()
+
+    # Fetch published sub-courses for this course
+    child_courses = Course.query.filter_by(parent_id=course.id, is_published=True).order_by(Course.order_index, Course.name).all()
+    sub_course_payload = []
+    for child in child_courses:
+        child_access = child.user_has_access(user.id) or child.name in allowed_courses
+        child_free = child.is_free()
+
+        child_progress_record = None
+        child_progress_percent = 0
+        child_started = False
+        if child_access or child_free:
+            child_progress_record = UserCourseProgress.query.filter_by(
+                user_id=user.id,
+                course_id=child.id
+            ).first()
+            if child_progress_record:
+                child_started = child_progress_record.progress > 0
+                total_child_lessons = Lesson.query.filter_by(course_id=child.id).count()
+                if total_child_lessons:
+                    child_progress_percent = int((child_progress_record.progress / total_child_lessons) * 100)
+
+        sub_course_payload.append({
+            'course': child,
+            'has_access': child_access,
+            'is_free': child_free,
+            'requires_purchase': bool(child.price and child.price > 0),
+            'is_started': child_started,
+            'progress_percent': child_progress_percent
+        })
 
     exams = sorted(course.exams, key=lambda ex: (
         ex.trigger_lesson.week if ex.trigger_lesson else 999,
@@ -4014,6 +4761,7 @@ def course_page(course_name, year):
 
     return render_template(
         "courses.html",
+        current_user=user,
         course=course,
         lessons=lessons,
         progress=progress,
@@ -4024,7 +4772,8 @@ def course_page(course_name, year):
         exams=exam_states,
         exams_by_trigger=exams_by_trigger,
         locked_weeks=locked_weeks,
-        locking_exam_by_week=locking_exam_by_week
+        locking_exam_by_week=locking_exam_by_week,
+        sub_courses=sub_course_payload
     )
 
 
@@ -4046,6 +4795,450 @@ def course_detail(course_id):
 
     # Redirect to the existing course_page route with name and year
     return redirect(url_for('course_page', course_name=course.name, year=course.year))
+
+
+# -------------------- Stripe Payment Routes -------------------- #
+@app.route('/courses/<int:course_id>/checkout')
+@login_required
+def course_checkout(course_id):
+    """
+    Create a Stripe Checkout session for purchasing a course.
+    """
+    from stripe_helpers import create_checkout_session, sync_course_with_stripe
+
+    user = User.query.filter_by(username=session['user']).first()
+    course = Course.query.get_or_404(course_id)
+
+    # Check if course is free
+    if not course.price or course.price <= 0:
+        flash("⚠️ This course is free. No payment required.")
+        return redirect(url_for('courses_dashboard'))
+
+    # Check if user already has access
+    if course.user_has_access(user.id):
+        flash("✅ You already have access to this course.")
+        return redirect(url_for('course_page', course_name=course.name, year=course.year))
+
+    # Sync course with Stripe if not already synced
+    if not course.stripe_price_id:
+        try:
+            product_id, price_id = sync_course_with_stripe(course)
+            course.stripe_product_id = product_id
+            course.stripe_price_id = price_id
+            db.session.commit()
+        except Exception as e:
+            app.logger.error(f"Failed to sync course {course_id} with Stripe: {e}")
+            flash("⚠️ Payment system error. Please contact support.")
+            return redirect(url_for('courses_dashboard'))
+
+    # Create checkout session
+    try:
+        success_url = url_for('payment_success', _external=True) + f'?session_id={{CHECKOUT_SESSION_ID}}'
+        cancel_url = url_for('payment_cancel', course_id=course_id, _external=True)
+
+        checkout_session = create_checkout_session(
+            course=course,
+            user=user,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+
+        return redirect(checkout_session.url, code=303)
+
+    except Exception as e:
+        app.logger.error(f"Failed to create checkout session: {e}")
+        flash("⚠️ Could not create payment session. Please try again.")
+        return redirect(url_for('courses_dashboard'))
+
+
+@app.route('/payment/success')
+@login_required
+def payment_success():
+    """
+    Handle successful payment - shown after Stripe checkout.
+    Note: Access is granted via webhook for security, not here.
+    """
+    session_id = request.args.get('session_id')
+    return render_template('payment_success.html', session_id=session_id)
+
+
+@app.route('/payment/cancel/<int:course_id>')
+@login_required
+def payment_cancel(course_id):
+    """
+    Handle cancelled payment.
+    """
+    course = Course.query.get_or_404(course_id)
+    return render_template('payment_cancel.html', course=course)
+
+
+# -------------------- Subscription Routes -------------------- #
+@app.route('/subscriptions')
+@login_required
+def subscription_plans():
+    """
+    Show available subscription plans.
+    """
+    plans = SubscriptionPlan.query.filter_by(is_active=True).all()
+    user = User.query.filter_by(username=session['user']).first()
+    active_subscription = get_user_active_subscription(user.id) if user else None
+
+    return render_template('subscription_plans.html', plans=plans, active_subscription=active_subscription)
+
+
+@app.route('/subscribe/<int:plan_id>')
+@login_required
+def subscribe_plan(plan_id):
+    """
+    Create a Stripe Checkout session for subscription.
+    """
+    from stripe_helpers import create_subscription_checkout_session, sync_plan_with_stripe
+
+    user = User.query.filter_by(username=session['user']).first()
+    plan = SubscriptionPlan.query.get_or_404(plan_id)
+
+    if not plan.is_active:
+        flash("⚠️ This subscription plan is not available.")
+        return redirect(url_for('subscription_plans'))
+
+    # Check if user already has an active subscription
+    active_sub = get_user_active_subscription(user.id)
+    if active_sub:
+        flash("⚠️ You already have an active subscription.")
+        return redirect(url_for('my_subscription'))
+
+    # Sync plan with Stripe if not already synced
+    if not plan.stripe_price_id:
+        try:
+            product_id, price_id = sync_plan_with_stripe(plan)
+            plan.stripe_product_id = product_id
+            plan.stripe_price_id = price_id
+            db.session.commit()
+        except Exception as e:
+            app.logger.error(f"Failed to sync plan {plan_id} with Stripe: {e}")
+            flash("⚠️ Payment system error. Please contact support.")
+            return redirect(url_for('subscription_plans'))
+
+    # Create checkout session
+    try:
+        success_url = url_for('subscription_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}'
+        cancel_url = url_for('subscription_cancel', plan_id=plan_id, _external=True)
+
+        checkout_session = create_subscription_checkout_session(
+            plan=plan,
+            user=user,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+
+        return redirect(checkout_session.url, code=303)
+
+    except Exception as e:
+        app.logger.error(f"Failed to create subscription checkout: {e}")
+        flash("⚠️ Could not create subscription. Please try again.")
+        return redirect(url_for('subscription_plans'))
+
+
+@app.route('/subscription/success')
+@login_required
+def subscription_success():
+    """
+    Handle successful subscription - shown after Stripe checkout.
+    """
+    session_id = request.args.get('session_id')
+    return render_template('subscription_success.html', session_id=session_id)
+
+
+@app.route('/subscription/cancel/<int:plan_id>')
+@login_required
+def subscription_cancel(plan_id):
+    """
+    Handle cancelled subscription checkout.
+    """
+    plan = SubscriptionPlan.query.get_or_404(plan_id)
+    return render_template('subscription_cancel.html', plan=plan)
+
+
+@app.route('/my-subscription')
+@login_required
+def my_subscription():
+    """
+    Show user's subscription details and management options.
+    """
+    user = User.query.filter_by(username=session['user']).first()
+    active_subscription = get_user_active_subscription(user.id)
+
+    subscription_data = None
+    if active_subscription:
+        plan = SubscriptionPlan.query.get(active_subscription.plan_id)
+        courses = plan.get_courses() if plan else []
+
+        subscription_data = {
+            'subscription': active_subscription,
+            'plan': plan,
+            'courses': courses
+        }
+
+    # Get all subscriptions (including canceled)
+    all_subscriptions = UserSubscription.query.filter_by(user_id=user.id).order_by(UserSubscription.start_date.desc()).all()
+
+    return render_template('my_subscription.html', subscription_data=subscription_data, all_subscriptions=all_subscriptions)
+
+
+@app.route('/billing-portal')
+@login_required
+def billing_portal():
+    """
+    Redirect to Stripe Customer Portal for subscription management.
+    """
+    from stripe_helpers import create_customer_portal_session
+
+    user = User.query.filter_by(username=session['user']).first()
+    active_subscription = get_user_active_subscription(user.id)
+
+    if not active_subscription or not active_subscription.stripe_customer_id:
+        flash("⚠️ No active subscription found.")
+        return redirect(url_for('my_subscription'))
+
+    try:
+        return_url = url_for('my_subscription', _external=True)
+        portal_session = create_customer_portal_session(
+            active_subscription.stripe_customer_id,
+            return_url
+        )
+        return redirect(portal_session.url, code=303)
+
+    except Exception as e:
+        app.logger.error(f"Failed to create billing portal session: {e}")
+        flash("⚠️ Could not access billing portal. Please try again.")
+        return redirect(url_for('my_subscription'))
+
+
+@app.route('/stripe/webhook', methods=['POST'])
+def stripe_webhook():
+    """
+    Handle Stripe webhook events.
+    This is called by Stripe to notify us of payment events.
+    """
+    from stripe_helpers import (
+        verify_webhook_signature, handle_checkout_session_completed,
+        handle_subscription_created, handle_invoice_payment_succeeded,
+        handle_invoice_payment_failed
+    )
+    import stripe
+
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+
+    try:
+        event = verify_webhook_signature(payload, sig_header)
+    except ValueError:
+        # Invalid payload
+        app.logger.error("Invalid webhook payload")
+        return jsonify({'error': 'Invalid payload'}), 400
+    except stripe.error.SignatureVerificationError:
+        # Invalid signature
+        app.logger.error("Invalid webhook signature")
+        return jsonify({'error': 'Invalid signature'}), 400
+    except Exception as e:
+        app.logger.error(f"Webhook verification error: {e}")
+        return jsonify({'error': 'Verification failed'}), 400
+
+    # Handle the event
+    event_type = event['type']
+
+    if event_type == 'checkout.session.completed':
+        session = event['data']['object']
+        mode = session.get('mode')
+
+        if mode == 'subscription':
+            # Handle subscription checkout
+            metadata = session.get('metadata', {})
+            subscription_id = session.get('subscription')
+
+            if subscription_id:
+                try:
+                    # Fetch full subscription details from Stripe
+                    subscription = stripe.Subscription.retrieve(subscription_id)
+                    sub_data = handle_subscription_created(subscription)
+
+                    # Create or update user subscription record
+                    user_sub = UserSubscription.query.filter_by(
+                        stripe_subscription_id=subscription_id
+                    ).first()
+
+                    if not user_sub:
+                        user_sub = UserSubscription(
+                            user_id=sub_data['user_id'],
+                            plan_id=sub_data['plan_id'],
+                            stripe_subscription_id=sub_data['subscription_id'],
+                            stripe_customer_id=sub_data['customer_id'],
+                            status=sub_data['status'],
+                            start_date=datetime.fromtimestamp(sub_data['current_period_start']),
+                            current_period_start=datetime.fromtimestamp(sub_data['current_period_start']),
+                            current_period_end=datetime.fromtimestamp(sub_data['current_period_end'])
+                        )
+
+                        if sub_data['trial_start']:
+                            user_sub.trial_start = datetime.fromtimestamp(sub_data['trial_start'])
+                        if sub_data['trial_end']:
+                            user_sub.trial_end = datetime.fromtimestamp(sub_data['trial_end'])
+
+                        db.session.add(user_sub)
+
+                    # Grant access to courses in the plan
+                    plan = SubscriptionPlan.query.get(sub_data['plan_id'])
+                    if plan and plan.course_ids:
+                        grant_subscription_access(sub_data['user_id'], plan.course_ids)
+
+                    # Upgrade user role
+                    user = User.query.get(sub_data['user_id'])
+                    if user and user.role == 'user':
+                        user.role = 'subscriber'
+
+                    db.session.commit()
+                    app.logger.info(f"Created subscription {subscription_id} for user {sub_data['user_id']}")
+
+                except Exception as e:
+                    app.logger.error(f"Failed to create subscription: {e}")
+                    db.session.rollback()
+                    return jsonify({'error': 'Failed to create subscription'}), 500
+        else:
+            # Handle one-time purchase
+            payment_data = handle_checkout_session_completed(session)
+
+            try:
+                user = User.query.get(payment_data['user_id'])
+                course = Course.query.get(payment_data['course_id'])
+
+                if user and course:
+                    grant_course_access(
+                        user.id,
+                        course,
+                        access_type='purchased',
+                        amount_paid=payment_data['amount_paid'],
+                        payment_intent_id=payment_data['payment_intent_id']
+                    )
+
+                    if user.role == 'user':
+                        user.role = 'paid'
+
+                    db.session.commit()
+                    app.logger.info(f"Granted access to course {course.id} for user {user.id}")
+
+                    # Send course enrollment email
+                    try:
+                        from email_utils import send_course_enrollment_email
+                        send_course_enrollment_email(user, course.name, payment_data['amount_paid'])
+                    except Exception as e:
+                        app.logger.error(f"Failed to send enrollment email: {e}")
+
+            except Exception as e:
+                app.logger.error(f"Failed to grant course access: {e}")
+                db.session.rollback()
+                return jsonify({'error': 'Failed to grant access'}), 500
+
+    elif event_type == 'invoice.payment_succeeded':
+        invoice = event['data']['object']
+        invoice_data = handle_invoice_payment_succeeded(invoice)
+
+        try:
+            user_sub = UserSubscription.query.filter_by(
+                stripe_subscription_id=invoice_data['subscription_id']
+            ).first()
+
+            if user_sub:
+                user_sub.status = 'active'
+                user_sub.last_payment_date = datetime.utcnow()
+                user_sub.last_payment_amount = invoice_data['amount_paid']
+                user_sub.current_period_start = datetime.fromtimestamp(invoice_data['period_start'])
+                user_sub.current_period_end = datetime.fromtimestamp(invoice_data['period_end'])
+
+                # Unlock courses if they were locked
+                plan = SubscriptionPlan.query.get(user_sub.plan_id)
+                if plan and plan.course_ids:
+                    unlock_subscription_courses(user_sub.user_id, plan.course_ids)
+
+                db.session.commit()
+                app.logger.info(f"Payment succeeded for subscription {invoice_data['subscription_id']}")
+
+        except Exception as e:
+            app.logger.error(f"Failed to update subscription on payment success: {e}")
+            db.session.rollback()
+
+    elif event_type == 'invoice.payment_failed':
+        invoice = event['data']['object']
+        invoice_data = handle_invoice_payment_failed(invoice)
+
+        try:
+            user_sub = UserSubscription.query.filter_by(
+                stripe_subscription_id=invoice_data['subscription_id']
+            ).first()
+
+            if user_sub:
+                user_sub.status = 'past_due'
+                plan = SubscriptionPlan.query.get(user_sub.plan_id)
+
+                # Set grace period end date
+                if plan:
+                    user_sub.end_date = datetime.utcnow() + timedelta(days=plan.grace_period_days)
+
+                db.session.commit()
+                app.logger.info(f"Payment failed for subscription {invoice_data['subscription_id']}, entering grace period")
+
+                # TODO: Send email notification
+
+        except Exception as e:
+            app.logger.error(f"Failed to update subscription on payment failure: {e}")
+            db.session.rollback()
+
+    elif event_type == 'customer.subscription.updated':
+        subscription = event['data']['object']
+
+        try:
+            user_sub = UserSubscription.query.filter_by(
+                stripe_subscription_id=subscription['id']
+            ).first()
+
+            if user_sub:
+                user_sub.status = subscription['status']
+                user_sub.cancel_at_period_end = subscription.get('cancel_at_period_end', False)
+
+                if subscription.get('canceled_at'):
+                    user_sub.canceled_at = datetime.fromtimestamp(subscription['canceled_at'])
+
+                db.session.commit()
+                app.logger.info(f"Updated subscription {subscription['id']}")
+
+        except Exception as e:
+            app.logger.error(f"Failed to update subscription: {e}")
+            db.session.rollback()
+
+    elif event_type == 'customer.subscription.deleted':
+        subscription = event['data']['object']
+
+        try:
+            user_sub = UserSubscription.query.filter_by(
+                stripe_subscription_id=subscription['id']
+            ).first()
+
+            if user_sub:
+                user_sub.status = 'canceled'
+                user_sub.end_date = datetime.utcnow()
+
+                # Lock course access but retain data
+                plan = SubscriptionPlan.query.get(user_sub.plan_id)
+                if plan and plan.course_ids:
+                    revoke_subscription_access(user_sub.user_id, plan.course_ids, keep_progress=True)
+
+                db.session.commit()
+                app.logger.info(f"Canceled subscription {subscription['id']}, data retained")
+
+        except Exception as e:
+            app.logger.error(f"Failed to cancel subscription: {e}")
+            db.session.rollback()
+
+    return jsonify({'status': 'success'}), 200
 
 
 # -------------------- Error Handlers -------------------- #

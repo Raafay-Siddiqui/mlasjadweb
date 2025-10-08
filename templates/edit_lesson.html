@@ -50,6 +50,10 @@
           <input type="text" name="title" value="{{ lesson.title }}" required>
         </label>
         <label>
+          <span>Lesson Description (optional)</span>
+          <textarea name="description" rows="3" placeholder="Brief description of what students will learn in this lesson...">{{ lesson.description or '' }}</textarea>
+        </label>
+        <label>
           <span>Replace Video (optional)</span>
           <input type="file" name="video_file" accept=".mp4,.mov,.avi">
         </label>

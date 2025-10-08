@@ -135,6 +135,10 @@
           <input type="text" name="title" placeholder="e.g., Week 1: Introduction" required>
         </label>
         <label class="full-span">
+          <span>Lesson Description (optional)</span>
+          <textarea name="description" rows="3" placeholder="Brief description of what students will learn in this lesson..."></textarea>
+        </label>
+        <label class="full-span">
           <span>Upload Video (MP4/MOV/AVI)</span>
           <input type="file" name="video_file" accept=".mp4,.mov,.avi">
         </label>
@@ -255,6 +259,23 @@
                   <button type="submit" class="admin-btn admin-btn--primary">💾 Update Course</button>
                 </form>
               </details>
+              {% if course.price and course.price > 0 %}
+              <div style="margin-top: 10px; padding: 10px; background: #f1f3f5; border-radius: 8px;">
+                <p style="margin: 0 0 8px; font-size: 0.9rem; color: #495057;">
+                  <strong>Stripe Integration:</strong>
+                  {% if course.stripe_product_id and course.stripe_price_id %}
+                    ✅ Synced (Product ID: {{ course.stripe_product_id[:20] }}...)
+                  {% else %}
+                    ⚠️ Not synced with Stripe
+                  {% endif %}
+                </p>
+                <form action="{{ url_for('sync_course_stripe', course_id=course.id) }}" method="POST" style="margin: 0;">
+                  <button type="submit" class="admin-btn admin-btn--accent" style="font-size: 0.9rem; padding: 6px 12px;">
+                    🔄 Sync with Stripe
+                  </button>
+                </form>
+              </div>
+              {% endif %}
             </div>
             <form action="{{ url_for('delete_course', course_id=course.id) }}" method="POST" onsubmit="return confirm('⚠️ Delete this course and all its lessons & quizzes?');">
               <button type="submit" class="admin-btn admin-btn--danger">🗑 Delete Course</button>

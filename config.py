@@ -27,6 +27,24 @@ class Config:
     SESSION_COOKIE_HTTPONLY = os.environ.get('SESSION_COOKIE_HTTPONLY', 'True').lower() == 'true'
     SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 
+    # Stripe Configuration
+    STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY')
+    STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
+    STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET')
+
+    # Email Configuration (Flask-Mail)
+    # Defaults configured for IonOS SMTP (smtp.ionos.co.uk with SSL on port 465)
+    MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.ionos.co.uk')
+    MAIL_PORT = int(os.environ.get('MAIL_PORT', 465))
+    MAIL_USE_TLS = os.environ.get('MAIL_USE_TLS', 'False').lower() == 'true'
+    MAIL_USE_SSL = os.environ.get('MAIL_USE_SSL', 'True').lower() == 'true'
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@albaqiacademy.com')
+    MAIL_SENDER_NAME = os.environ.get('MAIL_SENDER_NAME', 'Al-Baqi Academy')
+    MAIL_MAX_EMAILS = os.environ.get('MAIL_MAX_EMAILS')
+    MAIL_ASCII_ATTACHMENTS = False
+
     # Application
     DEBUG = False
 

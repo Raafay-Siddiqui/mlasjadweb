@@ -30,11 +30,9 @@ env/
 instance/
 .webassets-cache
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
-site.db
+# Database (SQLite no longer used - using Supabase PostgreSQL)
+# *.db files can now be safely committed if needed for backups
+# Main database is in Supabase cloud, not in git
 
 # Environment variables
 .env
@@ -56,6 +54,9 @@ logs/
 # Uploads (optional - comment out if you want to track uploads)
 static/uploads/
 backups/
+
+# Course files (videos, large files - use rsync instead)
+static/courses/*
 
 # Testing
 .pytest_cache/

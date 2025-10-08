@@ -1,8 +1,19 @@
 {% extends "base.html" %}
-{% block title %}{{ course.name|capitalize }}{% endblock %}
+{% block title %}{{ course.name }}{% endblock %}
 {% block layout %}one-col{% endblock %}
 
 {% block body_class %}bg-geometry{% endblock %}
+
+{% block head %}
+<style>
+  #player {
+    width: 80%;
+    max-width: 800px;
+    margin: 0 auto;
+    display: block;
+  }
+</style>
+{% endblock %}
 
 {% block content %}
 {% macro render_question_lines(text) %}
@@ -22,13 +33,43 @@
 {% endmacro %}
 
 <h2 style="text-align:center; margin-bottom:10px">
-  📚 {{ course.name|capitalize }} – Year {{ course.year }}
+  📚 {{ course.name }} – Year {{ course.year }}
 </h2>
 
 {% if course.description %}
 <p style="text-align:center; color:#a8b3d8; margin-bottom:20px">
   {{ course.description }}
 </p>
+{% endif %}
+
+{% if sub_courses %}
+<section class="course-subcourses">
+  <h3>Included Sub-courses</h3>
+  <ul>
+    {% for item in sub_courses %}
+      {% set child = item.course %}
+      <li>
+        <div class="subcourse-meta">
+          <span class="subcourse-name">{{ child.name|capitalize }}</span>
+          {% if item.is_started %}
+            <span class="subcourse-progress">Progress: {{ item.progress_percent }}%</span>
+          {% endif %}
+        </div>
+        <div class="subcourse-actions">
+          {% if item.has_access or item.is_free %}
+            <a class="btn ghost" href="{{ url_for('course_page', course_name=child.name, year=child.year) }}">Open</a>
+          {% elif item.requires_purchase %}
+            <a class="btn primary" href="{{ url_for('course_checkout', course_id=child.id) }}">
+              Purchase{% if child.price %} £{{ "%.2f"|format(child.price) }}{% endif %}
+            </a>
+          {% else %}
+            <span class="badge" style="background:#f97316;">Locked</span>
+          {% endif %}
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
 {% endif %}
 
 <div style="text-align:center; margin-bottom:28px;">
@@ -71,7 +112,7 @@
     </label>
     <button type="button" class="btn primary" id="agreement-continue" disabled>
       Continue
-      <span class="agreement-countdown-wrap">( <span class="agreement-countdown">20</span>s )</span>
+      <span class="agreement-countdown-wrap">( <span class="agreement-countdown">10</span>s )</span>
     </button>
   </div>
 </div>
@@ -100,6 +141,21 @@
       </div>
       <div id="week{{ lesson.week }}" class="week-body{% if open_lesson_id == lesson.id %} active{% endif %}">
 
+        {% if lesson.description %}
+          <div class="lesson-description" style="margin-bottom: 20px; padding: 12px; background: rgba(91, 124, 250, 0.05); border-left: 3px solid #5b7cfa; border-radius: 6px;">
+            <div class="lesson-description-content" data-full-text="{{ lesson.description }}" style="color: #a8b3d8; font-size: 0.95rem; line-height: 1.6;">
+              {% if lesson.description|length > 200 %}
+                <p style="margin: 0;">{{ lesson.description[:200] }}...</p>
+                <button type="button" class="lesson-description-toggle" onclick="toggleDescription(this)" style="background: none; border: none; color: #5b7cfa; cursor: pointer; font-size: 0.9rem; padding: 4px 0; margin-top: 6px; text-decoration: underline;">
+                  Read more
+                </button>
+              {% else %}
+                <p style="margin: 0;">{{ lesson.description }}</p>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+
         {% if lesson.ppt_file %}
           <p><strong>Slides:</strong>
             <a class="btn" href="{{ url_for('static', filename=lesson.ppt_file) }}" download>📂 Download Slides</a>
@@ -108,9 +164,12 @@
 
         {% if lesson.video_file %}
           <p><strong>Lecture video:</strong></p>
-          <video width="100%" style="max-width:700px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.2);" controls preload="metadata">
+          <video
+            id="player-{{ lesson.id }}"
+            playsinline
+            controls
+          >
             <source src="{{ url_for('static', filename=lesson.video_file) }}" type="video/mp4">
-            Your browser does not support the video tag.
           </video>
         {% endif %}
 
@@ -204,7 +263,7 @@
     <!-- 🔒 Locked -->
     <div class="week-card locked">
       <div class="week-header">
-        🔒 Week {{ lesson.week }} (Locked – {% if locking_exam %}complete {{ locking_exam.exam.title }}{% else %}finish earlier lessons first{% endif %})
+        🔒 Week {{ lesson.week }}: {{ lesson.title }} (Locked – {% if locking_exam %}complete {{ locking_exam.exam.title }}{% else %}finish earlier lessons first{% endif %})
       </div>
     </div>
     {% endif %}
@@ -473,18 +532,87 @@ document.addEventListener('DOMContentLoaded', function () {
       });
   });
 });
+
+function toggleDescription(button) {
+  const container = button.closest('.lesson-description-content');
+  const fullText = container.dataset.fullText;
+  const paragraph = container.querySelector('p');
+
+  if (button.textContent.trim() === 'Read more') {
+    paragraph.textContent = fullText;
+    button.textContent = 'Show less';
+  } else {
+    paragraph.textContent = fullText.substring(0, 200) + '...';
+    button.textContent = 'Read more';
+  }
+}
 </script>
 
 <style>
+.course-subcourses {
+  width: 90%;
+  max-width: 900px;
+  margin: 0 auto 32px;
+  padding: 18px;
+  background: var(--card);
+  border-radius: 16px;
+  border: 1px solid var(--nav-border);
+}
+
+.course-subcourses h3 {
+  font-size: 1.15rem;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+.course-subcourses ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.course-subcourses li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--bg-soft);
+}
+
+.subcourse-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subcourse-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.subcourse-progress {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.subcourse-actions .btn {
+  min-width: 120px;
+  justify-content: center;
+}
+
 .course-disclaimer {
   width: 90%;
   max-width: 1000px;
   margin: 0 auto 24px;
   padding: 16px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(19, 26, 50, 0.85);
-  color: #e0e5ff;
+  border: 1px solid var(--border-color);
+  background: var(--card);
+  color: var(--text);
 }
 
 .course-disclaimer__header {
@@ -501,7 +629,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 .course-disclaimer__content {
   margin-top: 14px;
-  color: #cdd2f8;
+  color: var(--muted);
 }
 
 .course-disclaimer__content ul {
@@ -694,16 +822,16 @@ document.addEventListener('DOMContentLoaded', function () {
 }
 
 .week-card {
-  border: 1px solid #2e3650;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   margin: 10px 0;
   overflow: hidden;
-  background: #1a1f36;
-  color: #eaf0ff;
+  background: var(--card);
+  color: var(--text);
 }
 
 .week-header {
-  background: #2a314d;
+  background: var(--bg-soft);
   padding: 12px 16px;
   font-size: 18px;
   font-weight: bold;
@@ -711,11 +839,11 @@ document.addEventListener('DOMContentLoaded', function () {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: #3d64c7 !important;
+  color: var(--text) !important;
 }
 
 .week-header:hover {
-  background: #3a4266;
+  background: var(--input-bg);
 }
 
 .status-chip {
@@ -731,8 +859,8 @@ document.addEventListener('DOMContentLoaded', function () {
 .week-body {
   display: none;
   padding: 16px;
-  background: #1a1f36;
-  color: #173c9b !important;
+  background: var(--card);
+  color: var(--text) !important;
 }
 
 .week-body.active {
@@ -754,8 +882,8 @@ document.addEventListener('DOMContentLoaded', function () {
   margin-bottom: 20px;
   padding: 12px;
   border-radius: 8px;
-  background: rgba(27, 34, 64, 0.85);
-  color: #e0e5ff !important;
+  background: var(--bg-soft);
+  color: var(--text) !important;
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -768,7 +896,7 @@ document.addEventListener('DOMContentLoaded', function () {
 .quiz-result .question-main {
   margin: 0;
   font-weight: 600;
-  color: #f2f5ff !important;
+  color: var(--text) !important;
   word-wrap: break-word;
   hyphens: auto;
   line-height: 1.4;
@@ -777,7 +905,7 @@ document.addEventListener('DOMContentLoaded', function () {
 .quiz-question .question-sub,
 .quiz-result .question-sub {
   margin: 0;
-  color: #9fb1ff !important;
+  color: var(--muted) !important;
   font-size: 0.95rem;
 }
 
@@ -786,12 +914,12 @@ document.addEventListener('DOMContentLoaded', function () {
   align-items: center;
   gap: 12px;
   margin: 8px 0;
-  color: #d5dcff !important;
+  color: var(--text) !important;
   cursor: pointer;
   line-height: 1.5;
   padding: 12px 15px;
   border-radius: 12px;
-  background: rgba(255,255,255,0.04);
+  background: var(--input-bg);
   width: 100%;
 }
 
@@ -839,8 +967,8 @@ document.addEventListener('DOMContentLoaded', function () {
 .quiz-result {
   padding: 12px;
   border-radius: 10px;
-  background: rgba(19, 26, 50, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--card);
+  border: 1px solid var(--border-color);
   text-align: left;
   display: grid;
   gap: 10px;
@@ -856,7 +984,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 .quiz-result .question {
   margin: 0 0 10px;
-  color: #e0e5ff;
+  color: var(--text);
 }
 
 .quiz-result-options {
@@ -872,7 +1000,7 @@ document.addEventListener('DOMContentLoaded', function () {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #cdd2f8;
+  color: var(--muted);
   min-width: 0;
 }
 
@@ -921,7 +1049,7 @@ document.addEventListener('DOMContentLoaded', function () {
 }
 
 .quiz-note {
-  color: #aeb4d9;
+  color: var(--muted);
   font-size: 0.9rem;
   margin-bottom: 12px;
 }
@@ -996,6 +1124,49 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 }
 
+
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize Plyr on all video players
+  const players = Array.from(document.querySelectorAll('[id^="player-"]')).map(p => new Plyr(p, {
+    controls: [
+      'play-large',
+      'restart',
+      'rewind',
+      'play',
+      'fast-forward',
+      'progress',
+      'current-time',
+      'duration',
+      'mute',
+      'volume',
+      'captions',
+      'settings',
+      'pip',
+      'airplay',
+      'fullscreen'
+    ],
+    settings: ['captions', 'quality', 'speed', 'loop'],
+  }));
+
+  // Enhanced security features
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  document.addEventListener('keydown', e => {
+    // Prevent save, view source, inspect, console, F12
+    if ((e.ctrlKey || e.metaKey) && ['s','S','u','U'].includes(e.key)) {
+      e.preventDefault();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i','I','c','C'].includes(e.key)) {
+      e.preventDefault();
+    }
+    if (e.key === 'F12') {
+      e.preventDefault();
+    }
+  });
+});
+</script>
 
 {% endblock %}

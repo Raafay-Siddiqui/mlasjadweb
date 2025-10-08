@@ -3,43 +3,164 @@
 
 {% block body_class %}bg-geometry{% endblock %}
 
+{% block head %}
+<style>
+  body {
+    overflow-x: hidden;
+  }
+
+  .video-page {
+    width: 100vw;
+    margin-left: calc(-50vw + 50%);
+    padding: 40px 0;
+  }
+
+  .video-page__inner {
+    max-width: 95%;
+    margin: 0 auto;
+  }
+
+  .video-page__player {
+    position: relative;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .video-page__watermark {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 100;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    font-weight: 600;
+    pointer-events: none;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 5px 10px;
+    border-radius: 4px;
+  }
+
+  #player {
+    width: 80%;
+    max-width: 800px;
+    margin: 0 auto;
+    display: block;
+  }
+
+  .plyr-player {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: #000;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container" style="max-width:900px; margin-top:40px; text-align:center">
-  <h2>{{ title }}</h2>
+<div class="video-page">
+  <div class="video-page__inner">
+    <h2 style="text-align:center; margin-bottom:30px;">{{ title }}</h2>
 
-  {% if video_file %}
-    <video 
-      width="100%" 
-      controls 
-      playsinline
-      disablePictureInPicture 
-      controlsList="nodownload noremoteplayback"
-      style="border-radius:12px; margin-top:20px; max-height:70vh"
-      oncontextmenu="return false;"
-      preload="metadata"
-    >
-      <source src="{{ url_for('static', filename=video_file) }}" type="video/mp4">
-      Your browser does not support the video tag.
-    </video>
-  {% endif %}
+    {% if video_file %}
+      <div class="video-page__player">
+        <!-- Watermark overlay -->
+        <div class="video-page__watermark">
+          {% if current_user.is_authenticated %}{{ current_user.username }}{% endif %}
+        </div>
 
-  {% if ppt_file %}
-    <iframe 
-      src="{{ url_for('static', filename=ppt_file) }}" 
-      style="width:100%; height:80vh; border:none; margin-top:20px; border-radius:12px"
-      oncontextmenu="return false;"
-      loading="lazy"
-    ></iframe>
-  {% endif %}
+        <video
+          id="player"
+          class="plyr-player"
+          playsinline
+          disablePictureInPicture
+          controlsList="nodownload noremoteplayback"
+          oncontextmenu="return false;"
+          preload="metadata"
+          controls
+        >
+          <source src="{{ url_for('static', filename=video_file) }}" type="video/mp4">
+        </video>
+      </div>
+    {% endif %}
+
+    {% if ppt_file %}
+      <iframe
+        src="{{ url_for('static', filename=ppt_file) }}"
+        style="width:100%; height:85vh; border:none; margin-top:20px; display:block;"
+        oncontextmenu="return false;"
+        loading="lazy"
+      ></iframe>
+    {% endif %}
+  </div>
 </div>
 
-<!-- 🔒 Extra security to disable right-click + save shortcuts -->
 <script>
-  document.addEventListener('contextmenu', e => e.preventDefault());
-  document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && ['s','S','u','U','c','C'].includes(e.key)) {
-      e.preventDefault();
+  document.addEventListener('DOMContentLoaded', () => {
+    // Initialize Plyr
+    const player = new Plyr('#player', {
+      controls: [
+        'play-large',
+        'restart',
+        'rewind',
+        'play',
+        'fast-forward',
+        'progress',
+        'current-time',
+        'duration',
+        'mute',
+        'volume',
+        'captions',
+        'settings',
+        'pip',
+        'airplay',
+        'fullscreen'
+      ],
+      settings: ['captions', 'quality', 'speed', 'loop'],
+    });
+
+    // 🔒 Enhanced Security Features
+    document.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Disable keyboard shortcuts for save/inspect
+    document.addEventListener('keydown', e => {
+      // Prevent save (Ctrl+S / Cmd+S)
+      if ((e.ctrlKey || e.metaKey) && ['s','S'].includes(e.key)) {
+        e.preventDefault();
+      }
+      // Prevent view source (Ctrl+U / Cmd+U)
+      if ((e.ctrlKey || e.metaKey) && ['u','U'].includes(e.key)) {
+        e.preventDefault();
+      }
+      // Prevent inspect (Ctrl+Shift+I / Cmd+Shift+I)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i','I'].includes(e.key)) {
+        e.preventDefault();
+      }
+      // Prevent console (Ctrl+Shift+C / Cmd+Shift+C)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['c','C'].includes(e.key)) {
+        e.preventDefault();
+      }
+      // Prevent F12 (dev tools)
+      if (e.key === 'F12') {
+        e.preventDefault();
+      }
+    });
+
+    // Disable text selection on video container
+    const playerElement = document.querySelector('#player');
+    if (playerElement) {
+      playerElement.addEventListener('selectstart', e => e.preventDefault());
     }
+
+    // Log video events (optional - for analytics)
+    player.on('play', () => {
+      console.log('Video started playing');
+    });
+
+    player.on('ended', () => {
+      console.log('Video ended');
+      // Optional: Mark lesson as complete via AJAX
+    });
   });
 </script>
 {% endblock %}

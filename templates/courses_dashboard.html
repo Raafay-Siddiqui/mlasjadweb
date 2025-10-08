@@ -9,6 +9,16 @@
     <h2 id="courses-title">Welcome {{ user.full_name or user.username }} 👋</h2>
     <p class="sub">Here are your available courses:</p>
 
+    <!-- Quick Links -->
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px;">
+      <a href="{{ url_for('subscription_plans') }}" class="btn" style="display: inline-flex; align-items: center; gap: 8px;">
+        📦 Browse Subscription Plans
+      </a>
+      <a href="{{ url_for('my_subscription') }}" class="btn ghost" style="display: inline-flex; align-items: center; gap: 8px;">
+        💳 My Subscription
+      </a>
+    </div>
+
     <!-- Standalone Courses Section -->
     {% if standalone_courses %}
       <div class="course-section" style="margin-top: 48px;">
@@ -29,9 +39,33 @@
                     <span class="badge badge-price">💰 ${{ "%.2f"|format(course.price) }}</span>
                   {% endif %}
                 </div>
-                <h3>{{ course.name|capitalize }}</h3>
+                <h3>{{ course.name }}</h3>
               </header>
               <p class="sub">{{ course.description or "Course description coming soon." }}</p>
+              {% if data.children %}
+                <div class="sub-course-list">
+                  <h4 class="sub-course-title">Included Sub-courses</h4>
+                  <ul class="sub-course-items">
+                    {% for child in data.children %}
+                      {% set child_course = child.course %}
+                      <li>
+                        <span class="sub-course-name">{{ child_course.name }}</span>
+                        {% if child.has_access or child.is_free %}
+                          <a class="btn ghost" href="{{ url_for('course_page', course_name=child_course.name, year=child_course.year) }}">
+                            Open
+                          </a>
+                        {% elif child.requires_approval %}
+                          <span class="badge badge-warning">Pending Approval</span>
+                        {% else %}
+                          <a class="btn ghost" href="{{ url_for('course_checkout', course_id=child_course.id) }}">
+                            Unlock{% if child_course.price %} £{{ "%.2f"|format(child_course.price) }}{% endif %}
+                          </a>
+                        {% endif %}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
               <footer>
                 {% if data.has_access or data.is_free %}
                   {% if data.is_started %}
@@ -59,10 +93,9 @@
                     Not Accepted Yet
                   </button>
                 {% else %}
-                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
-                    Not Bought Yet
-                  </button>
-                  <p class="sub" style="margin: 8px 0 0; color: #f59e0b; font-size: 0.9rem;">💳 Stripe integration coming soon</p>
+                  <a class="btn primary" href="{{ url_for('course_checkout', course_id=course.id) }}">
+                    💳 Purchase Course - £{{ "%.2f"|format(course.price) }}
+                  </a>
                 {% endif %}
               </footer>
             </article>
@@ -92,9 +125,33 @@
                     <span class="badge badge-price">💰 ${{ "%.2f"|format(course.price) }}</span>
                   {% endif %}
                 </div>
-                <h3>{{ course.name|capitalize }}</h3>
+                <h3>{{ course.name }}</h3>
               </header>
               <p class="sub">{{ course.description or "Course description coming soon." }}</p>
+              {% if data.children %}
+                <div class="sub-course-list">
+                  <h4 class="sub-course-title">Included Sub-courses</h4>
+                  <ul class="sub-course-items">
+                    {% for child in data.children %}
+                      {% set child_course = child.course %}
+                      <li>
+                        <span class="sub-course-name">{{ child_course.name }}</span>
+                        {% if child.has_access or child.is_free %}
+                          <a class="btn ghost" href="{{ url_for('course_page', course_name=child_course.name, year=child_course.year) }}">
+                            Open
+                          </a>
+                        {% elif child.requires_approval %}
+                          <span class="badge badge-warning">Pending Approval</span>
+                        {% else %}
+                          <a class="btn ghost" href="{{ url_for('course_checkout', course_id=child_course.id) }}">
+                            Unlock{% if child_course.price %} £{{ "%.2f"|format(child_course.price) }}{% endif %}
+                          </a>
+                        {% endif %}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
               <footer>
                 {% if data.has_access or data.is_free %}
                   {% if data.is_started %}
@@ -122,10 +179,9 @@
                     Not Accepted Yet
                   </button>
                 {% else %}
-                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
-                    Not Bought Yet
-                  </button>
-                  <p class="sub" style="margin: 8px 0 0; color: #f59e0b; font-size: 0.9rem;">💳 Stripe integration coming soon</p>
+                  <a class="btn primary" href="{{ url_for('course_checkout', course_id=course.id) }}">
+                    💳 Purchase Course - £{{ "%.2f"|format(course.price) }}
+                  </a>
                 {% endif %}
               </footer>
             </article>
@@ -155,9 +211,33 @@
                     <span class="badge badge-price">💰 ${{ "%.2f"|format(course.price) }}</span>
                   {% endif %}
                 </div>
-                <h3>{{ course.name|capitalize }}</h3>
+                <h3>{{ course.name }}</h3>
               </header>
               <p class="sub">{{ course.description or "Course description coming soon." }}</p>
+              {% if data.children %}
+                <div class="sub-course-list">
+                  <h4 class="sub-course-title">Included Sub-courses</h4>
+                  <ul class="sub-course-items">
+                    {% for child in data.children %}
+                      {% set child_course = child.course %}
+                      <li>
+                        <span class="sub-course-name">{{ child_course.name }}</span>
+                        {% if child.has_access or child.is_free %}
+                          <a class="btn ghost" href="{{ url_for('course_page', course_name=child_course.name, year=child_course.year) }}">
+                            Open
+                          </a>
+                        {% elif child.requires_approval %}
+                          <span class="badge badge-warning">Pending Approval</span>
+                        {% else %}
+                          <a class="btn ghost" href="{{ url_for('course_checkout', course_id=child_course.id) }}">
+                            Unlock{% if child_course.price %} £{{ "%.2f"|format(child_course.price) }}{% endif %}
+                          </a>
+                        {% endif %}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
               <footer>
                 {% if data.has_access or data.is_free %}
                   {% if data.is_started %}
@@ -185,10 +265,9 @@
                     Not Accepted Yet
                   </button>
                 {% else %}
-                  <button class="btn btn-danger" disabled style="opacity: 0.7; cursor: not-allowed;">
-                    Not Bought Yet
-                  </button>
-                  <p class="sub" style="margin: 8px 0 0; color: #f59e0b; font-size: 0.9rem;">💳 Stripe integration coming soon</p>
+                  <a class="btn primary" href="{{ url_for('course_checkout', course_id=course.id) }}">
+                    💳 Purchase Course - £{{ "%.2f"|format(course.price) }}
+                  </a>
                 {% endif %}
               </footer>
             </article>
@@ -207,14 +286,14 @@
 
 <style>
 .course-section {
-  border-top: 2px solid rgba(255, 255, 255, 0.1);
+  border-top: 2px solid var(--border-color);
   padding-top: 24px;
 }
 
 .section-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #e0e5ff;
+  color: var(--text);
   margin-bottom: 8px;
 }
 
@@ -234,8 +313,8 @@
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.14);
-  color: #f3f4ff;
+  background: var(--input-bg);
+  color: var(--text);
 }
 
 .badge-free {
@@ -275,14 +354,14 @@
 .progress-bar-label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #a8b3d8;
+  color: var(--muted);
   margin-bottom: 6px;
 }
 
 .progress-bar {
   width: 100%;
   height: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--input-bg);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -292,6 +371,40 @@
   background: linear-gradient(90deg, #10b981, #34d399);
   border-radius: 999px;
   transition: width 0.3s ease;
+}
+
+.sub-course-list {
+  margin-top: 18px;
+  padding: 14px;
+  background: var(--bg-soft);
+  border-radius: 12px;
+}
+
+.sub-course-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.sub-course-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.sub-course-items li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.sub-course-name {
+  color: var(--text);
+  font-weight: 500;
 }
 
 @media (max-width: 768px) {

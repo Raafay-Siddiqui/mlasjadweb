@@ -30,7 +30,7 @@
   .nav-inner {
     max-width: 100% !important;
     width: 100% !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     box-sizing: border-box !important;
   }
   
@@ -72,9 +72,8 @@
     display: flex !important;
     justify-content: flex-start;
     text-align: left;
-    flex-shrink: 1;
-    min-width: 0;
-    overflow: hidden;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .nav .brand .logo {
@@ -103,7 +102,7 @@
   .mobile-nav-drawer {
     padding: 88px 24px 28px;
     gap: 12px;
-    height: 27vh;
+    min-height: 60vh;
     background: var(--bg-soft) !important;
     overflow: visible !important;
   }
@@ -195,7 +194,7 @@
     padding: 14px 12px;
   }
 
-  button {
+  button:not(.plyr__control) {
     padding: 16px;
     font-size: 1rem;
   }
@@ -211,8 +210,8 @@
     padding: 16px;
   }
 
-  /* Video content mobile */
-  video, iframe {
+  /* Embedded media sizing */
+  iframe {
     max-height: 50vh !important;
     border-radius: 8px !important;
   }
@@ -368,7 +367,7 @@
     padding: 24px 16px;
   }
 
-  video, iframe {
+  iframe {
     max-height: 60vh !important;
   }
 }

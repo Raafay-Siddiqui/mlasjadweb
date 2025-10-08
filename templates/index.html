@@ -16,7 +16,6 @@
 <header class="hero">
   <div class="container wrap">
     <div>
-      <span class="tag"></span>
       <h1>The Foundation of Islam, made easy, explained clearly in English.</h1>
       <p class="lead">
         Beginner to advanced lessons — <strong>top quality recordings</strong>  
@@ -59,12 +58,36 @@
         <article class="card">
           <header>
             <h3>{{ course.name }}</h3>
+            {% if course.price and course.price > 0 %}
+              <span class="price-badge">£{{ "%.2f"|format(course.price) }}</span>
+            {% else %}
+              <span class="price-badge free">Free</span>
+            {% endif %}
           </header>
           <p class="sub">{{ course.description or "No description yet." }}</p>
           <footer>
-            <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
-              Open lessons
-            </a>
+            {% if current_user %}
+              {% set user_has_access = course.user_has_access(current_user.id) %}
+              {% if user_has_access or not course.price or course.price <= 0 %}
+                <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                  Open lessons
+                </a>
+              {% else %}
+                <a class="btn primary" href="{{ url_for('course_checkout', course_id=course.id) }}">
+                  Purchase Course
+                </a>
+              {% endif %}
+            {% else %}
+              {% if course.price and course.price > 0 %}
+                <a class="btn primary" href="{{ url_for('login') }}">
+                  Sign in to purchase
+                </a>
+              {% else %}
+                <a class="btn primary" href="{{ url_for('course_page', course_name=course.name, year=course.year) }}">
+                  Open lessons
+                </a>
+              {% endif %}
+            {% endif %}
           </footer>
         </article>
       {% endfor %}
@@ -227,7 +250,7 @@
     </form>
 
     <!-- Additional Services -->
-    <div class="services" style="margin-top:24px; padding:20px; background:#1a223f; border-radius:8px">
+    <div class="services" style="margin-top:24px; padding:20px; background:var(--card); border:1px solid var(--border-color); border-radius:8px">
       <h3 style="margin-top:0">Additional Services</h3>
       <ul style="list-style:none; padding:0; display:grid; gap:8px">
         <li>✓ Nikah</li>
@@ -242,7 +265,7 @@
 <footer>
   <div class="container foot">
     <div>© <span id="year"></span> Al-Baqi Academy</div>
-    <div class="right">Made with ☕ & dua • <a href="#about">About</a> • <a href="#invite">Invite</a></div>
+    <div class="right">Made by Raafay•Siddiqui <a href="#about">About</a> • <a href="#invite">Invite</a></div>
   </div>
 </footer>
 
@@ -455,6 +478,31 @@
   .swiper-button-prev:after {
     font-size: 16px;
   }
+}
+
+/* Course Pricing Styles */
+.card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.price-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #d7a94f, #c99935);
+  color: #0b1022;
+  white-space: nowrap;
+}
+
+.price-badge.free {
+  background: linear-gradient(135deg, #48e1a0, #34d399);
+  color: #0b1022;
 }
 </style>
 
